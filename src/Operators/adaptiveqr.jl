@@ -3,7 +3,58 @@
 export adaptiveqr!
 
 
+function givensreduceabbothbc!{T}(bcdata::Matrix{T},bcfilldata,k1::Integer,k2::Integer,j1::Integer,ir1::Range,ir2::Range)
+    nbcs=size(bcdata,1)
+
+    @inbounds a=bcdata[k1,j1]                # datagetindex(B,k1,j1)
+    @inbounds b=bcdata[k2,j1]                # datagetindex(B,k2,j1)    
+    
+    if b == 0.
+        return one(T),zero(T)
+    end    
+
+    
+    sq=sqrt(abs2(a) + abs2(b))    
+    a=a/sq;b=b/sq
+    ca=conj(a);cb=conj(b)
+    
+    #Assuming that left rows are already zero
+    
+    @inbounds for j = j1:ir1[end]
+        B1 = bcdata[k1,j]         # datagetindex(B,k1,j)
+        B2 = bcdata[k2,j]         # datagetindex(B,k2,j)  
+        
+        bcdata[k1,j],bcdata[k2,j]= ca*B1 + cb*B2,-b*B1 + a*B2
+    end
+    
+    # update only inside bands
+    @inbounds for j=ir1[end]+1:ir2[end]
+        B1 = bcdata[k1,j]
+        B2 = bcdata[k2,j]
+        
+        bcdata[k2,j]=a*B2 - b*B1
+    end
+    
+    # update fill in rows
+    @inbounds for j=1:nbcs
+        B1 = bcfilldata[k1,j]
+        B2 = bcfilldata[k2,j]
+    
+        bcfilldata[k1,j]=ca*B1 + cb*B2
+        bcfilldata[k2,j]=-b*B1 + a*B2    
+    end
+    
+
+    a::T,b::T    
+end
+
+
+
 function givensreduceab!{T<:Number,M,R}(B::MutableAlmostBandedOperator{T,M,R},k1::Integer,k2::Integer,j1::Integer)
+    if k2 <= B.numbcs
+        return givensreduceabbothbc!(B.bcdata,B.bcfilldata,k1,k2,j1,indexrange(B,k1),indexrange(B,k2))
+    end
+
     a=datagetindex(B,k1,j1)
     b=datagetindex(B,k2,j1)
     

@@ -20,10 +20,10 @@ type MutableAlmostBandedOperator{T,M,R} <: BandedBelowOperator{T}
     bc::Vector{R}         # The boundary rows
     op::M                 # The underlying op that is modified
     data::ShiftArray{T}   # Shifted to encapsolate bandedness  ##TODO: Change to BandedArray
-    filldata::Array{T,2}  # The combination of bcs
+    filldata::Matrix{T}  # The combination of bcs
     
-    bcdata::Array{T,2}  # The filled-in data for the boundary rows.  This is a rectangular
-    bcfilldata::Array{T,2}
+    bcdata::Matrix{T}    # The filled-in data for the boundary rows.  This is a rectangular
+    bcfilldata::Matrix{T}
     
     datalength::Int       # How long data is.  We can't use the array length of data as we double the memory allocation but don't want to fill in
     
