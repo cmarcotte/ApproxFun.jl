@@ -24,7 +24,8 @@ function givensreduceabbothbc!{T}(bcdata::Matrix{T},bcfilldata,k1::Integer,k2::I
         B1 = bcdata[k1,j]         # datagetindex(B,k1,j)
         B2 = bcdata[k2,j]         # datagetindex(B,k2,j)  
         
-        bcdata[k1,j],bcdata[k2,j]= ca*B1 + cb*B2,-b*B1 + a*B2
+        bcdata[k1,j]= ca*B1 + cb*B2
+        bcdata[k2,j]=-b*B1 + a*B2
     end
     
     # update only inside bands
@@ -49,10 +50,61 @@ function givensreduceabbothbc!{T}(bcdata::Matrix{T},bcfilldata,k1::Integer,k2::I
 end
 
 
+function givensreduceabfirstbc!{T}(bcdata::Matrix{T},bcfilldata,data,filldata,k1::Integer,k2::Integer,j1::Integer,ir1::Range,ir2::Range)
+    nbcs=size(bcdata,1)
+
+    @inbounds a=bcdata[k1,j1]                   # datagetindex(B,k1,j1)
+    @inbounds b=data[k2-nbcs,j1-k2+nbcs]        # datagetindex(B,k2,j1)    
+    
+    if b == 0.
+        return one(T),zero(T)
+    end    
+
+    
+    sq=sqrt(abs2(a) + abs2(b))    
+    a=a/sq;b=b/sq
+    ca=conj(a);cb=conj(b)
+    
+    #Assuming that left rows are already zero
+    
+    @inbounds for j = j1:ir1[end]
+        B1 = bcdata[k1,j]                      # datagetindex(B,k1,j)
+        B2 = data[k2-nbcs,j-k2+nbcs]         # datagetindex(B,k2,j)  
+        
+        bcdata[k1,j]            =ca*B1 + cb*B2
+        data[k2-nbcs,j-k2+nbcs] =-b*B1 + a*B2
+    end
+    
+    # update only inside bands
+    @inbounds for j=ir1[end]+1:ir2[end]
+        B1 = bcdata[k1,j]
+        B2 = data[k2-nbcs,j-k2+nbcs]
+        
+        data[k2-nbcs,j-k2+nbcs]=a*B2 - b*B1
+    end
+    
+    # update fill in rows
+    @inbounds for j=1:nbcs
+        B1 = bcfilldata[k1,j]
+        B2 = filldata[k2-nbcs,j]
+    
+        bcfilldata[k1,j]=ca*B1 + cb*B2
+        filldata[k2-nbcs,j]=-b*B1 + a*B2    
+    end
+    
+
+    a::T,b::T    
+end
+
+
 
 function givensreduceab!{T<:Number,M,R}(B::MutableAlmostBandedOperator{T,M,R},k1::Integer,k2::Integer,j1::Integer)
+    ir1=indexrange(B,k1)::Range1{Int64}
+    ir2=indexrange(B,k2)::Range1{Int64}    
     if k2 <= B.numbcs
-        return givensreduceabbothbc!(B.bcdata,B.bcfilldata,k1,k2,j1,indexrange(B,k1),indexrange(B,k2))
+        return givensreduceabbothbc!(B.bcdata,B.bcfilldata,k1,k2,j1,ir1,ir2)
+    elseif k1 <= B.numbcs
+        return givensreduceabfirstbc!(B.bcdata,B.bcfilldata,B.data,B.filldata,k1,k2,j1,ir1,ir2)    
     end
 
     a=datagetindex(B,k1,j1)
