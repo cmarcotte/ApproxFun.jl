@@ -1,7 +1,7 @@
-immutable ReImSpace{S,T,D}<: FunctionSpace{T,D}
+immutable ReImSpace{S,T,B,D}<: FunctionSpace{T,B,D}
     space::S 
 end
-ReImSpace{T,D}(sp::FunctionSpace{T,D})=ReImSpace{typeof(sp),T,D}(sp)
+ReImSpace{T,B,D}(sp::FunctionSpace{T,B,D})=ReImSpace{typeof(sp),T,B,D}(sp)
 
 domain(sp::ReImSpace)=domain(sp.space)
 
@@ -57,15 +57,15 @@ end
 for ST in (:RealOperator,:ImagOperator)
     @eval begin
         domainspace(s::$ST)=s.space
-        rangespace{S<:RealSpace,T,D}(s::$ST{ReImSpace{S,T,D}})=s.space
-        bandinds{S<:RealSpace,T,D}(A::$ST{ReImSpace{S,T,D}})=0,0
+        rangespace{S<:RealSpace,T,B,D}(s::$ST{ReImSpace{S,T,B,D}})=s.space
+        bandinds{S<:RealSpace,T,B,D}(A::$ST{ReImSpace{S,T,B,D}})=0,0
         domain(O::$ST)=domain(O.space)
     end
 end
 
 
 
-function addentries!{S<:RealSpace,T,D}(::RealOperator{ReImSpace{S,T,D}},A,kr::Range)
+function addentries!{S<:RealSpace,T,B,D}(::RealOperator{ReImSpace{S,T,B,D}},A,kr::Range)
     for k=kr
         if isodd(k)
             A[k,k]+=1
@@ -74,7 +74,7 @@ function addentries!{S<:RealSpace,T,D}(::RealOperator{ReImSpace{S,T,D}},A,kr::Ra
     A
 end
 
-function addentries!{S<:RealSpace,T,D}(::ImagOperator{ReImSpace{S,T,D}},A,kr::Range)
+function addentries!{S<:RealSpace,T,B,D}(::ImagOperator{ReImSpace{S,T,B,D}},A,kr::Range)
     for k=kr
         if iseven(k)
             A[k,k]+=1

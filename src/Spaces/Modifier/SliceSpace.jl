@@ -1,6 +1,6 @@
 ## Drop space drops the first n entries from a space
 
-immutable SliceSpace{index,stride,DS,T,D}<: FunctionSpace{T,D}
+immutable SliceSpace{index,stride,DS,T,B,D}<: FunctionSpace{T,B,D}
     space::DS 
     
     SliceSpace(sp::DS)=new(sp)
@@ -29,12 +29,12 @@ end
 
 =={n,st,S,T,D}(a::SliceSpace{n,st,S,T,D},b::SliceSpace{n,st,S,T,D})=a.space==b.space
 
-function conversion_rule{n,S<:FunctionSpace,T,D}(a::SliceSpace{n,1,S,T,D},b::SliceSpace{n,1,S,T,D})
+function conversion_rule{n,S,T,B,D}(a::SliceSpace{n,1,S,T,B,D},b::SliceSpace{n,1,S,T,B,D})
      @assert a==b
      a
 end
 # return the space that has banded Conversion to the other
-function conversion_rule{n,S<:FunctionSpace,T,D}(a::SliceSpace{n,1,S,T,D},b::FunctionSpace)
+function conversion_rule{n,S,T,B,D}(a::SliceSpace{n,1,S,T,B,D},b::FunctionSpace)
     @assert a.space==b
     a
 end

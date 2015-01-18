@@ -1,7 +1,7 @@
 export continuity
 
 
-typealias IntervalSpace  RealSpace{Interval}     # We assume basis is real
+typealias IntervalSpace{T}  RealSpace{T,Interval}     # We assume basis is real
 canonicaldomain{T<:IntervalSpace}(::Type{T})=Interval()
 
 Space{N<:Number}(d::Vector{N})=Space(Interval(d))
@@ -94,7 +94,7 @@ end
 
 ## Orthogonal polynomials
 
-abstract PolynomialSpace <: IntervalSpace
+abstract PolynomialSpace{T} <: IntervalSpace{T}
 
 bandinds{U<:PolynomialSpace,V<:PolynomialSpace}(M::Multiplication{U,V})=(1-length(M.f.coefficients),length(M.f.coefficients)-1)
 rangespace{U<:PolynomialSpace,V<:PolynomialSpace}(M::Multiplication{U,V})=domainspace(M)

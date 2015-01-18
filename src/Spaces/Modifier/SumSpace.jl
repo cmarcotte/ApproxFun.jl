@@ -3,22 +3,22 @@ export ⊕
 ## SumSpace{T,S,V} encodes a space that can be decoupled as f(x) = a(x) + b(x) where a is in S and b is in V
 
 
-immutable SumSpace{S<:FunctionSpace,V<:FunctionSpace,T<:Number,D<:Domain} <: FunctionSpace{T,D}
+immutable SumSpace{S<:FunctionSpace,V<:FunctionSpace,T,B,D<:Domain} <: FunctionSpace{T,B,D}
     spaces::(S,V)
     SumSpace(d::Domain)=new((S(d),V(d)))
     SumSpace(sp::(S,V))=new(sp)
 end
 
-function SumSpace{T<:Number,D}(A::(FunctionSpace{T,D},FunctionSpace{T,D}))
+function SumSpace{T<:Number,B,D}(A::(FunctionSpace{T,B,D},FunctionSpace{T,B,D}))
     @assert domain(A[1])==domain(A[2])
-    SumSpace{typeof(A[1]),typeof(A[2]),T,D}(A)
+    SumSpace{typeof(A[1]),typeof(A[2]),T,B,D}(A)
 end
 
 SumSpace(A::FunctionSpace,B::FunctionSpace)=SumSpace((A,B))
 
 
-typealias PeriodicSumSpace{S,V,T} SumSpace{S,V,T,PeriodicInterval}
-typealias IntervalSumSpace{S,V,T} SumSpace{S,V,T,Interval}
+typealias PeriodicSumSpace{S,V,T,B} SumSpace{S,V,T,B,PeriodicInterval}
+typealias IntervalSumSpace{S,V,T,B} SumSpace{S,V,T,B,Interval}
 
 
 
@@ -35,7 +35,7 @@ domain(A::SumSpace)=domain(A[1])
 
 
 
-spacescompatible{S,T}(A::SumSpace{S,T},B::SumSpace{S,T})=spacescompatible(A.spaces[1],B[1]) && spacescompatible(A.spaces[2],B[2])
+spacescompatible(A::SumSpace,B::SumSpace)=spacescompatible(A.spaces[1],B[1]) && spacescompatible(A.spaces[2],B[2])
 
 
 

@@ -4,33 +4,33 @@ export depiece,pieces
 # Piecewise Space
 ############
 
-immutable PiecewiseSpace{S<:FunctionSpace,T} <: FunctionSpace{T,UnionDomain}
+immutable PiecewiseSpace{S<:FunctionSpace,T,B} <: FunctionSpace{T,B,UnionDomain}
     spaces::Vector{S} 
     PiecewiseSpace(::AnyDomain)=new(S[S(AnyDomain())])
     PiecewiseSpace(sp::Vector{S})=new(sp)
 end
 PiecewiseSpace(sp::Vector{Any})=PiecewiseSpace([sp...])
-PiecewiseSpace{S,T}(::FunctionSpace{T},spaces::Vector{S})=PiecewiseSpace{S,T}(spaces)
+PiecewiseSpace{S,T,B}(::FunctionSpace{T,B},spaces::Vector{S})=PiecewiseSpace{S,T,B}(spaces)
 PiecewiseSpace(spaces)=PiecewiseSpace(first(spaces),spaces)
 Space(d::UnionDomain)=PiecewiseSpace(map(Space,d.domains))
 domain(S::PiecewiseSpace)=UnionDomain(map(domain,S.spaces))
 Base.length(S::PiecewiseSpace)=length(S.spaces)
 Base.getindex(d::PiecewiseSpace,k)=d.spaces[k]
 
-Base.vec{S<:FunctionSpace,V,T}(f::Fun{PiecewiseSpace{S,V},T},j::Integer)=Fun(f.coefficients[j:length(f.space):end],f.space.spaces[j])
-Base.vec{S<:FunctionSpace,V,T}(f::Fun{PiecewiseSpace{S,V},T})=[vec(f,j) for j=1:length(f.space)]
+Base.vec{S<:FunctionSpace,V,T,B}(f::Fun{PiecewiseSpace{S,V,B},T},j::Integer)=Fun(f.coefficients[j:length(f.space):end],f.space.spaces[j])
+Base.vec{S<:FunctionSpace,V,T,B}(f::Fun{PiecewiseSpace{S,V,B},T})=[vec(f,j) for j=1:length(f.space)]
 pieces{S<:PiecewiseSpace,T}(f::Fun{S,T})=vec(f)
 depiece{F<:Fun}(v::Vector{F})=Fun(vec(coefficients(v).'),PiecewiseSpace(map(space,v)))
 depiece(v::Vector{Any})=depiece([v...])
 
 
-Base.ones{T<:Number,SS,V}(::Type{T},S::PiecewiseSpace{SS,V})=depiece(Fun{SS,T}[ones(Sk) for Sk in S.spaces])
+Base.ones{T<:Number,SS,V,B}(::Type{T},S::PiecewiseSpace{SS,V,B})=depiece(Fun{SS,T}[ones(Sk) for Sk in S.spaces])
 
 
 
 
 
-function spacescompatible{S,T}(A::PiecewiseSpace{S,T},B::PiecewiseSpace{S,T})
+function spacescompatible{S,T,Bas}(A::PiecewiseSpace{S,T,Bas},B::PiecewiseSpace{S,T,Bas})
     if length(A) != length(B)
         false
     else
@@ -45,7 +45,7 @@ end
 
 
 
-function transform{VV,ST,T}(S::PiecewiseSpace{VV,ST},vals::Vector{T})
+function transform{VV,ST,T,B}(S::PiecewiseSpace{VV,ST,B},vals::Vector{T})
     n=length(vals)
     K=length(S)
    k=div(n,K)

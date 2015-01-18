@@ -2,7 +2,7 @@
 export Chebyshev
 
 
-typealias Chebyshev Ultraspherical{0}
+typealias Chebyshev{T} Ultraspherical{0,T}
 
 
 Space(d::IntervalDomain)=Chebyshev(d)
@@ -27,17 +27,17 @@ itransform(::Chebyshev,cfs::Vector)=ichebyshevtransform(cfs)
 
 ## Evaluation
 
-evaluate(f::Fun{Chebyshev},x)=clenshaw(f.coefficients,tocanonical(f,x))
+evaluate{T}(f::Fun{Chebyshev{T}},x)=clenshaw(f.coefficients,tocanonical(f,x))
 
 ## Calculus
 
 
 # diff T -> U, then convert U -> T
-integrate(f::Fun{Chebyshev})=Fun(chebyshevintegrate(domain(f),f.coefficients),f.space)
+integrate{T}(f::Fun{Chebyshev{T}})=Fun(chebyshevintegrate(domain(f),f.coefficients),f.space)
 chebyshevintegrate(d::Interval,cfs::Vector)=fromcanonicalD(d,0)*ultraint(ultraconversion(cfs))   
 
 
-differentiate(f::Fun{Chebyshev})=Fun(chebyshevdifferentiate(domain(f),f.coefficients),f.space)
+differentiate{T}(f::Fun{Chebyshev{T}})=Fun(chebyshevdifferentiate(domain(f),f.coefficients),f.space)
 chebyshevdifferentiate(d::Interval,cfs::Vector)=tocanonicalD(d,0)*ultraiconversion(ultradiff(cfs))
 chebyshevdifferentiate(d::IntervalDomain,cfs::Vector)=(Fun(x->tocanonicalD(d,x),d).*Fun(differentiate(Fun(cfs)),d)).coefficients
 
@@ -50,7 +50,7 @@ identity_fun(d::Chebyshev)=identity_fun(domain(d))
 
 ## 2D fast values
 
-function ApproxFun.values{T}(f::TensorFun{Chebyshev,Chebyshev,T})
+function ApproxFun.values{T,CT1,CT2}(f::TensorFun{Chebyshev{CT1},Chebyshev{CT2},T})
     n,m=size(f)
     M=Array(T,n,m)
     f1=pad(f.coefficients[1].coefficients,n)

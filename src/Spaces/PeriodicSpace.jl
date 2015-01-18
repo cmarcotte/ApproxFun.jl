@@ -1,4 +1,4 @@
-typealias PeriodicSpace{T} FunctionSpace{T,PeriodicInterval}       
+typealias PeriodicSpace{T,B} FunctionSpace{T,B,PeriodicInterval}       
 canonicaldomain{T<:PeriodicSpace}(::Type{T})=PeriodicInterval()
 
 ## Evaluation

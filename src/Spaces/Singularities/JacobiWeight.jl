@@ -4,7 +4,7 @@
 export JacobiWeight
 
 
-immutable JacobiWeight{S<:IntervalSpace} <: IntervalSpace
+immutable JacobiWeight{S,T} <: IntervalSpace{T}
     α::Float64
     β::Float64
     space::S
@@ -33,7 +33,7 @@ spacescompatible(B::IntervalSpace,A::JacobiWeight)=spacescompatible(A,JacobiWeig
 jacobiweight(α,β,x)=(1+x).^α.*(1-x).^β
 jacobiweight(sp::JacobiWeight,x)=jacobiweight(sp.α,sp.β,tocanonical(sp,x))
 
-function evaluate{S,T}(f::Fun{JacobiWeight{S},T},x)
+function evaluate{S,T}(f::Fun{JacobiWeight{S,T},T},x)
     tol=1.0E-14
     fv=Fun(f.coefficients,space(f).space)[x]
     if isa(fv,Number)&&abs(fv)<tol
@@ -63,10 +63,10 @@ function spaceconversion(f::Vector,sp1::JacobiWeight,sp2::JacobiWeight)
         (Conversion(sp1,sp2)*f)
     end
 end
-spaceconversion{S,n,st}(f::Vector,sp::JacobiWeight,S2::SliceSpace{n,st,S,Float64,Interval})=error("Implement")
-spaceconversion{S,n,st}(f::Vector,S2::SliceSpace{n,st,S,Float64,Interval},sp::JacobiWeight)=error("Implement")
-spaceconversion{S}(f::Vector,sp::JacobiWeight,S2::ReImSpace{S,Float64,Interval})=error("Implement")
-spaceconversion{S}(f::Vector,S2::ReImSpace{S,Float64,Interval},sp::JacobiWeight)=error("Implement")
+spaceconversion{S,T,n,st}(f::Vector,sp::JacobiWeight,S2::SliceSpace{n,st,S,T,RealBasis,Interval})=error("Implement")
+spaceconversion{S,T,n,st}(f::Vector,S2::SliceSpace{n,st,S,T,RealBasis,Interval},sp::JacobiWeight)=error("Implement")
+spaceconversion{S,T}(f::Vector,sp::JacobiWeight,S2::ReImSpace{S,T,RealBasis,Interval})=error("Implement")
+spaceconversion{S,T}(f::Vector,S2::ReImSpace{S,T,RealBasis,Interval},sp::JacobiWeight)=error("Implement")
 spaceconversion(f::Vector,sp::JacobiWeight,S2::IntervalSpace)=spaceconversion(f,sp,JacobiWeight(0,0,S2))
 spaceconversion(f::Vector,S2::IntervalSpace,sp::JacobiWeight)=spaceconversion(f,JacobiWeight(0,0,S2),sp)
 

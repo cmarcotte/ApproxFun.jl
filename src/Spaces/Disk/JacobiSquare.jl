@@ -2,7 +2,7 @@
 # represents function of the form r^m g(r^2)
 # as r^m P^{.5+a,b-.5}(r^2)
 
-immutable JacobiSquare <: IntervalSpace
+immutable JacobiSquare{T} <: IntervalSpace{T}
     m::Int
     a::Int
     b::Int
@@ -71,15 +71,15 @@ evaluate{T}(f::Fun{JacobiSquare,T},x::Number)=itransform(f.space,f.coefficients,
 ## Operators
 
 # Override JacobiWeight default
-Multiplication{T}(f::Fun{JacobiWeight{Chebyshev},T},S::JacobiSquare)=Multiplication{JacobiWeight{Chebyshev},JacobiSquare,T}(f,S)
+Multiplication{T}(f::Fun{JacobiWeight{Chebyshev{T}},T},S::JacobiSquare)=Multiplication{JacobiWeight{Chebyshev},JacobiSquare,T}(f,S)
 bandinds{T}(M::Multiplication{JacobiWeight{Chebyshev},JacobiSquare,T})=0,0
 
-function addentries!{T}(M::Multiplication{JacobiWeight{Chebyshev},JacobiSquare,T},A,kr::Range)
+function addentries!{T}(M::Multiplication{JacobiWeight{Chebyshev{T}},JacobiSquare{T},T},A,kr::Range)
     @assert length(M.f)==1
     @assert M.f.space.α ==0.
     addentries!(ConstantOperator(2.0^M.f.space.β*M.f.coefficients[1]),A,kr)
 end
-function rangespace{T}(M::Multiplication{JacobiWeight{Chebyshev},JacobiSquare,T})
+function rangespace{T}(M::Multiplication{JacobiWeight{Chebyshev{T}},JacobiSquare{T},T})
     @assert length(M.f)==1
     @assert M.f.space.α ==0.
     @assert isinteger(M.f.space.β)

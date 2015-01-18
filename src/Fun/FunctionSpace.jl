@@ -3,25 +3,33 @@
 export FunctionSpace, domainspace, rangespace, maxspace, minspace,Space
 
 
-# T tells whether the basis is real (cos/sin) or complex
+immutable RealBasis
+end
+immutable ComplexBasis
+end
+immutable AnyBasis
+end
+
+# T tells the type of the coefficients
+# B tells whether the basis is real (cos/sin) or complex
 # D tells what canonical domain is (Interval/PeriodicInterval)
-abstract FunctionSpace{T,D} #TODO should be able to write D<:Domain
+abstract FunctionSpace{T,B,D} #TODO should be able to write D<:Domain
 
-typealias RealSpace{D} FunctionSpace{Float64,D}
-typealias ComplexSpace{D} FunctionSpace{Complex{Float64},D}
+typealias RealSpace{T,D} FunctionSpace{T,RealBasis,D}
+typealias ComplexSpace{T,D} FunctionSpace{T,ComplexBasis,D}
 
 
-domain{T,D<:AnyDomain}(::FunctionSpace{T,D})=AnyDomain()
-immutable ConstantSpace <: FunctionSpace{Float64,AnyDomain}
+domain{B,T,D<:AnyDomain}(::FunctionSpace{T,B,D})=AnyDomain()
+immutable ConstantSpace{T} <: FunctionSpace{T,RealBasis,AnyDomain}
 end
 
 
 
 
-immutable AnySpace <: FunctionSpace{Float64,AnyDomain}
+immutable AnySpace <: FunctionSpace{Any,AnyBasis,AnyDomain}
 end
 
-immutable NoSpace <: FunctionSpace{Float64,AnyDomain}
+immutable NoSpace <: FunctionSpace{Any,AnyBasis,AnyDomain}
 end
 
 
@@ -227,7 +235,7 @@ Base.rand(d::FunctionSpace)=rand(domain(d))
 
 ## default transforms
 
-function itransform{T}(S::FunctionSpace{T},cfs)
+function itransform(S::FunctionSpace,cfs)
     csp=canonicalspace(S)
     if S==csp
         error("Override itransform(::"*string(typeof(S))*",cfs)")
@@ -236,7 +244,7 @@ function itransform{T}(S::FunctionSpace{T},cfs)
     itransform(csp,spaceconversion(cfs,S,csp))
 end
 
-function transform{T}(S::FunctionSpace{T},vals)
+function transform(S::FunctionSpace,vals)
     csp=canonicalspace(S)
     if S==csp
         error("Override transform(::"*string(typeof(S))*",vals)")

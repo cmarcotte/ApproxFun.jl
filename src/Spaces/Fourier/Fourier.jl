@@ -4,7 +4,7 @@ export Fourier,Taylor,Hardy,CosSpace,SinSpace,Laurent
 
 for T in (:CosSpace,:SinSpace)
     @eval begin
-        immutable $T <: PeriodicSpace{Float64}
+        immutable $T <: PeriodicSpace{RealBasis}
             domain::Union(PeriodicDomain,AnyDomain)
         end
         $T()=$T(PeriodicInterval())
@@ -14,7 +14,7 @@ end
 
 # s == true means analytic inside, taylor series
 # s == false means anlytic outside and decaying at infinity
-immutable Hardy{s} <: PeriodicSpace{Complex{Float64}}
+immutable Hardy{s} <: PeriodicSpace{ComplexBasis}
     domain::Union(PeriodicDomain,AnyDomain)
     Hardy(d)=new(d)
     Hardy()=new(Circle())
@@ -98,9 +98,9 @@ evaluate{T,N<:Number}(f::Fun{SinSpace,T},t::N)=sum(promote_type(T,N)[f.coefficie
 
 ## Laurent space
 
-typealias Laurent PeriodicSumSpace{Hardy{true},Hardy{false},Complex{Float64}}
-Laurent()=Laurent(PeriodicInterval())
-Laurent{T<:Number}(d::Vector{T}) = Laurent(PeriodicInterval(d))
+typealias Laurent{T} PeriodicSumSpace{Hardy{true},Hardy{false},T,ComplexBasis}
+#Laurent()=Laurent{Any}(PeriodicInterval())
+#Laurent{T<:Number}(d::Vector{T}) = Laurent{T}(PeriodicInterval(d))
 
 Space(d::PeriodicDomain)=Fourier(d)
 Space(d::Circle)=Laurent(d)
@@ -119,9 +119,9 @@ Base.ones{T<:Number}(::Type{T},S::Laurent)=Fun(ones(T,1),S)
 
 ## Fourier space
 
-typealias Fourier PeriodicSumSpace{CosSpace,SinSpace,Float64}
-Fourier()=Fourier(PeriodicInterval())
-Fourier{T<:Number}(d::Vector{T}) = Fourier(PeriodicInterval(d))
+typealias Fourier{T} PeriodicSumSpace{CosSpace,SinSpace,T,RealBasis}
+#Fourier()=Fourier(PeriodicInterval())
+#Fourier{T<:Number}(d::Vector{T}) = Fourier(PeriodicInterval(d))
 
 
 #domain(S) may be any domain

@@ -5,7 +5,7 @@ export Ultraspherical
 
 
 
-immutable Ultraspherical{O} <: PolynomialSpace
+immutable Ultraspherical{O,T} <: PolynomialSpace{T}
     domain::Union(Interval,AnyDomain)
     Ultraspherical(d)=new(d)
     Ultraspherical()=new(Interval())
@@ -42,14 +42,14 @@ Base.ones{O}(S::Ultraspherical{O})=Fun(ones(1),S)
 
 ## Fast evaluation
 
-Base.first{O}(f::Fun{Ultraspherical{O}})=foldr(-,canonicalcoefficients(f))
-Base.last{O}(f::Fun{Ultraspherical{O}})=reduce(+,canonicalcoefficients(f))
+Base.first{O,T}(f::Fun{Ultraspherical{O,T},T})=foldr(-,canonicalcoefficients(f))
+Base.last{O,T}(f::Fun{Ultraspherical{O,T}})=reduce(+,canonicalcoefficients(f))
 identity_fun{m}(d::Ultraspherical{m})=Fun(identity_fun(domain(d)),d)
 
 
 ## Calculus
 
-integrate(f::Fun{Ultraspherical{1}})=Fun(fromcanonicalD(f,0)*ultraint(f.coefficients),Chebyshev(domain(f)))
+integrate{T}(f::Fun{Ultraspherical{1,T}})=Fun(fromcanonicalD(f,0)*ultraint(f.coefficients),Chebyshev(domain(f)))
 
 
 
