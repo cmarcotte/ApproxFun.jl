@@ -1,3 +1,12 @@
+##Taylor
+
+
+bandinds(M::Multiplication{Taylor,Taylor})=1-length(M.f),0
+rangespace(M::Multiplication{Taylor,Taylor})=domainspace(M)
+addentries!(M::Multiplication{Taylor,Taylor},A,k)=addentries!(ToeplitzOperator(reverse!(M.f.coefficients[2:end]),[M.f.coefficients[1]]),A,k)
+
+
+
 
 ToeplitzOperator(f::Fun{Laurent})=ToeplitzOperator(f.coefficients[2:2:end],
                                                     f.coefficients[1:2:end])
@@ -17,6 +26,9 @@ getindex(T::Evaluation{Taylor,Complex{Float64},Complex{Float64}},cols::Range)=ma
 bandinds(M::Multiplication{Laurent,Laurent})=bandinds(LaurentOperator(M.f))
 rangespace(M::Multiplication{Laurent,Laurent})=domainspace(M)
 addentries!(M::Multiplication{Laurent,Laurent},A,k)=addentries!(LaurentOperator(M.f),A,k)
+
+
+
 
 
 
