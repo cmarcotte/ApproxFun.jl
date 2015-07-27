@@ -26,7 +26,15 @@ SumSpace(sp::Array)=SumSpace(tuple(sp...))
 
 canonicalspace(A::SumSpace)=SumSpace(sort([A.spaces...]))
 
-⊕(A::FunctionSpace,B::FunctionSpace)=SumSpace(A,B)
+function ⊕(A::FunctionSpace,B::FunctionSpace)
+    if domainscompatible(A,B)
+        SumSpace(A,B)
+    else
+        #TODO: overlapping domains
+        @assert isempty(intersect(domain(A),domain(B)))
+        PiecewiseSpace([A,B])
+    end
+end
 ⊕(f::Fun,g::Fun)=Fun(interlace(coefficients(f),coefficients(g)),space(f)⊕space(g))
 
 

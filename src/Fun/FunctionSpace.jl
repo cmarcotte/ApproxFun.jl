@@ -244,15 +244,22 @@ function Base.union(a::FunctionSpace,b::FunctionSpace)
     cspa=canonicalspace(a)
     cspb=canonicalspace(b)
     if cspa!=a || cspb!=b
-        cr=union(cspa,cspb)  #Max or min space?
+        cr=union(cspa,cspb)
     end
     if cr!=NoSpace()
         return cr
     end
 
-    cr=maxspace(a,b)  #Max or min space?
-    if cr!=NoSpace()
-        return cr
+    if domainscompatible(a,b)
+        # see if conversion is implemented
+        cr=maxspace(a,b)
+        if cr!=NoSpace()
+            return cr
+        end
+        cr=conversion_type(a,b)
+        if cr!=NoSpace()
+            return cr
+        end
     end
 
     a⊕b
