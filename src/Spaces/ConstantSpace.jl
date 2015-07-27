@@ -1,6 +1,13 @@
-immutable ConstantSpace <: UnivariateSpace{RealBasis} end
 
+#TODO: Multivariate
+abstract FiniteSpace{T}  <: UnivariateSpace{T}
+
+
+immutable ConstantSpace <: FiniteSpace{RealBasis} end
 ConstantSpace(::AnyDomain)=ConstantSpace()
+
+Base.length(C::ConstantSpace)=1
+
 
 Fun(c::Number)=Fun([c],ConstantSpace())
 Fun(c::Number,d::ConstantSpace)=Fun([c],d)
