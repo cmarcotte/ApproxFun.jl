@@ -1,40 +1,50 @@
 versioninfo()
 
+using ApproxFun,Base.Test
+
+println("Domain tests")
+
+@test !in(0.45-0.65im,Interval())
+@test cumsum(ApproxFun.Flatten(([3],ApproxFun.repeated(2)))).it[2]==ApproxFun.Count(5,2)
+
+import ApproxFun.Infinity
+
+@test Infinity(true)+Infinity(true) == Infinity(true)
+@test Infinity(false)+Infinity(false) == Infinity(false)
+@test Infinity(true)+1 == Infinity(true)
+@test Infinity(false)+1 == Infinity(false)
+
+
+@time include("MatrixTest.jl")
+
+
 println("Fun tests")
-include("ChebyshevTest.jl")
-include("FourierTest.jl")
-include("ComplexIFunTest.jl")
-include("NumberTypeTest.jl")
-println("ODE tests")
-include("ODETest.jl")
-println("Vector tests")
-include("VectorTest.jl")
+@time include("ChebyshevTest.jl")
+@time include("FourierTest.jl")
+@time include("ComplexIFunTest.jl")
+@time include("NumberTypeTest.jl")
 println("Operator tests")
-include("OperatorTest.jl")
+@time include("OperatorTest.jl")
+println("ODE tests")
+@time include("ODETest.jl")
+println("Vector tests")
+@time include("VectorTest.jl")
 println("Singularities tests")
-include("SingularitiesTest.jl")
-println("Definite Integral tests")
-include("DefiniteIntegralTest.jl")
+@time include("SingularitiesTest.jl")
+println("Integral Equations tests")
+@time include("IntegralEquationsTest.jl")
 println("Spaces tests")
-include("SpacesTest.jl")
-if isdir(Pkg.dir("FastGaussQuadrature"))
-    include("JacobiTest.jl")
-else
-    warn("Unable to do JacobiTest.jl since FastGaussQuadrature.jl is not installed")
-end
+@time include("SpacesTest.jl")
+println("Jacobi tests")
+@time include("JacobiTest.jl")
+
+
+println("Extras tests")
+@time include("ETDRK4Test.jl")
+@time include("ExtrasTest.jl")
+@time include("FractionalTest.jl")
 
 println("Multivariate tests")
-include("MultivariateTest.jl")
-println("Speed tests")
-include("SpeedTest.jl")
-include("SpeedODETest.jl")
-include("SpeedPDETest.jl")
-
-
-println("Example tests")
-if isdir(Pkg.dir("Gadfly"))
-    include("ExamplesTest.jl")
-    include("ReadmeTest.jl")
-else
-    warn("Unable to do Examples since Gadfly.jl is not installed")
-end
+@time include("MultivariateTest.jl")
+println("PDE tests")
+@time include("PDETest.jl")

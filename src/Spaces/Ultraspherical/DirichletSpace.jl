@@ -2,20 +2,49 @@
 
 export ChebyshevDirichlet
 
-immutable ChebyshevDirichlet{left,right} <: PolynomialSpace
-    domain::Interval
+#TODO: Type of Interval
+immutable ChebyshevDirichlet{left,right,D} <: PolynomialSpace{D}
+    domain::D
     ChebyshevDirichlet(d)=new(d)
-    ChebyshevDirichlet()=new(Interval())
+    ChebyshevDirichlet()=new(D())
 end
 
-spacescompatible{l,r}(a::ChebyshevDirichlet{l,r},b::ChebyshevDirichlet{l,r})=domainscompatible(a,b)
+for TYP in (:Number,:AbstractArray,:Vec,:Fun)
+    @eval evaluate(f::AbstractVector,S::ChebyshevDirichlet,x::$TYP) =
+        evaluate(Fun(Fun(f,S),canonicalspace(S)),x)
+end
+@compat (::Type{ChebyshevDirichlet{l,r}}){l,r}() =
+    ChebyshevDirichlet{l,r,Interval{Float64}}()
+@compat (::Type{ChebyshevDirichlet{l,r}}){l,r}(d::Domain) =
+    ChebyshevDirichlet{l,r,typeof(d)}(d)
 
-ChebyshevDirichlet()=ChebyshevDirichlet{1,1}()
-ZeroChebyshevDirichlet(d)=SliceSpace(ChebyshevDirichlet{1,1}(d),2)
-ZeroChebyshevDirichlet()=SliceSpace(ChebyshevDirichlet{1,1}(),2)
+spacescompatible{l,r,D}(a::ChebyshevDirichlet{l,r,D},b::ChebyshevDirichlet{l,r,D}) =
+    domainscompatible(a,b)
 
-canonicalspace(S::ChebyshevDirichlet)=Chebyshev(domain(S))
+ChebyshevDirichlet() = ChebyshevDirichlet{1,1,Interval{Float64}}()
+ZeroChebyshevDirichlet(d) =
+    ChebyshevDirichlet{1,1,Interval{Float64}}(d)|(3:∞)
+ZeroChebyshevDirichlet() =
+    ChebyshevDirichlet{1,1,Interval{Float64}}()|(3:∞)
 
+canonicalspace(S::ChebyshevDirichlet) = Chebyshev(domain(S))
+
+setdomain{l,r}(S::ChebyshevDirichlet{l,r},d::Domain) = ChebyshevDirichlet{l,r}(d)
+
+
+# These are used to make sure Chebyshev comes first
+
+Base.isless(a::Chebyshev,b::ChebyshevDirichlet)=true
+<(a::Chebyshev,b::ChebyshevDirichlet)=true
+<=(a::Chebyshev,b::ChebyshevDirichlet)=true
+>(a::Chebyshev,b::ChebyshevDirichlet)=false
+>=(a::Chebyshev,b::ChebyshevDirichlet)=false
+
+Base.isless(a::ChebyshevDirichlet,b::Chebyshev)=false
+<(a::ChebyshevDirichlet,b::Chebyshev)=false
+<=(a::ChebyshevDirichlet,b::Chebyshev)=false
+>(a::ChebyshevDirichlet,b::Chebyshev)=true
+>=(a::ChebyshevDirichlet,b::Chebyshev)=true
 
 ## coefficients
 
@@ -69,27 +98,34 @@ coefficients(v::Vector,::ChebyshevDirichlet{1,0},::Chebyshev)=idirichlettransfor
 
 ## Dirichlet Conversion operators
 
-addentries!(C::Conversion{ChebyshevDirichlet{1,0},Chebyshev},A,kr::Range)=toeplitz_addentries!([],[1.,1.],A,kr)
-addentries!(C::Conversion{ChebyshevDirichlet{0,1},Chebyshev},A,kr::Range)=toeplitz_addentries!([],[1.,-1.],A,kr)
-function addentries!(C::Conversion{ChebyshevDirichlet{1,1},Chebyshev},A,kr::Range)
-    A=toeplitz_addentries!([],[1.,0.,-1.],A,kr)
+Conversion(D::ChebyshevDirichlet,C::Chebyshev)=ConcreteConversion(D,C)
 
-    A
-end
-function addentries!(C::Conversion{ChebyshevDirichlet{2,2},Chebyshev},A,kr::Range)
-    for k=kr
-        A[k,k]=1
-        A[k,k+4]=2*(k+1)/k-1
-        if k>= 3
-            A[k,k+2]=-2*(k-1)/(k-2)
-        end
+getindex{D,CC<:Chebyshev,T}(C::ConcreteConversion{ChebyshevDirichlet{1,0,D},CC,T},k::Integer,j::Integer) =
+    j==k || j==k+1 ? one(T) : zero(T)
+
+getindex{D,CC<:Chebyshev,T}(C::ConcreteConversion{ChebyshevDirichlet{0,1,D},CC,T},k::Integer,j::Integer) =
+    j==k ? one(T) : ( j==k+1? -one(T) : zero(eltype(C)))
+
+getindex{D,CC<:Chebyshev,T}(C::ConcreteConversion{ChebyshevDirichlet{1,1,D},CC,T},k::Integer,j::Integer) =
+    j==k ? one(T) : ( j==k+2? -one(T) : zero(eltype(C)))
+
+function getindex{D,CC<:Chebyshev,T}(C::ConcreteConversion{ChebyshevDirichlet{2,2,D},CC,T},k::Integer,j::Integer)
+    if j==k
+        one(T)
+    elseif j==k+4
+        2one(T)*(k+1)/k-1
+    elseif k≥3 && j==k+2
+        -2one(T)*(k-1)/(k-2)
+    else
+        zero(T)
     end
-
-    A
 end
-bandinds(::Conversion{ChebyshevDirichlet{1,0},Chebyshev})=0,1
-bandinds(::Conversion{ChebyshevDirichlet{0,1},Chebyshev})=0,1
-bandinds(::Conversion{ChebyshevDirichlet{1,1},Chebyshev})=0,2
+
+
+bandinds{D,C<:Chebyshev}(::ConcreteConversion{ChebyshevDirichlet{1,0,D},C})=0,1
+bandinds{D,C<:Chebyshev}(::ConcreteConversion{ChebyshevDirichlet{0,1,D},C})=0,1
+bandinds{D,C<:Chebyshev}(::ConcreteConversion{ChebyshevDirichlet{1,1,D},C})=0,2
+bandinds{D,C<:Chebyshev}(::ConcreteConversion{ChebyshevDirichlet{2,2,D},C})=0,4
 
 conversion_rule(b::ChebyshevDirichlet,a::Chebyshev)=b
 
@@ -106,11 +142,11 @@ conversion_rule(b::ChebyshevDirichlet,a::Chebyshev)=b
 ## Evaluation Functional
 
 
-datalength(B::Evaluation{ChebyshevDirichlet{1,0},Bool})=B.x?Inf:1
-datalength(B::Evaluation{ChebyshevDirichlet{0,1},Bool})=B.x?1:Inf
-datalength(B::Evaluation{ChebyshevDirichlet{1,1},Bool})=B.x?1:2
+bandinds{D}(B::ConcreteEvaluation{ChebyshevDirichlet{1,0,D},Bool}) = 0,B.x?∞:0
+bandinds{D}(B::ConcreteEvaluation{ChebyshevDirichlet{0,1,D},Bool}) = 0,B.x?0:∞
+bandinds{D}(B::ConcreteEvaluation{ChebyshevDirichlet{1,1,D},Bool}) = 0,1
 
-function getindex(B::Evaluation{ChebyshevDirichlet{1,0},Bool},kr::Range)
+function getindex{D}(B::ConcreteEvaluation{ChebyshevDirichlet{1,0,D},Bool},kr::Range)
     d = domain(B)
 
     if B.x == false && B.order == 0
@@ -118,32 +154,36 @@ function getindex(B::Evaluation{ChebyshevDirichlet{1,0},Bool},kr::Range)
     elseif B.x == true && B.order == 0
         Float64[k==1?1.0:2.0 for k=kr]
     else
-        getindex(Evaluation(d,B.x,B.order)*Conversion(domainspace(B)),kr)
+        (Evaluation(d,B.x,B.order)*Conversion(domainspace(B)))[kr]
     end
 end
 
-function getindex(B::Evaluation{ChebyshevDirichlet{0,1},Bool},kr::Range)
-    d = domain(B)
+function getindex{D}(B::ConcreteEvaluation{ChebyshevDirichlet{0,1,D},Bool},kr::Range)
+    S = Space(domain(B))
+
 
     if B.x == true && B.order == 0
         Float64[k==1?1.0:0.0 for k=kr]
     elseif B.x == false && B.order == 0
         Float64[k==1?1.0:-(-1)^k*2.0 for k=kr]
     else
-        getindex(Evaluation(d,B.x,B.order)*Conversion(domainspace(B)),kr)
+        (Evaluation(S,B.x,B.order)*Conversion(domainspace(B),S))[kr]
     end
 end
 
-function getindex(B::Evaluation{ChebyshevDirichlet{1,1},Bool},kr::Range)
-    d = domain(B)
+function getindex{D}(B::ConcreteEvaluation{ChebyshevDirichlet{1,1,D},Bool},kr::Range)
+    S = Space(domain(B))
 
     if B.x == false && B.order == 0
         Float64[k==1?1.0:(k==2?-1.0:0.0) for k=kr]
     elseif B.x == true && B.order == 0
         Float64[k==1||k==2?1.0:0.0 for k=kr]
     else
-        getindex(Evaluation(d,B.x,B.order)*Conversion(domainspace(B)),kr)
+        getindex(Evaluation(S,B.x,B.order)*Conversion(domainspace(B),S),kr)
     end
 end
 
-Evaluation(sp::ChebyshevDirichlet,x::Float64,ord::Integer)=EvaluationWrapper(sp,x,ord,Evaluation(domain(sp),x,ord)*Conversion(sp))
+function Evaluation(sp::ChebyshevDirichlet,x::Float64,ord::Integer)
+    S=Space(domain(sp))
+    EvaluationWrapper(sp,x,ord,Evaluation(S,x,ord)*Conversion(sp,S))
+end

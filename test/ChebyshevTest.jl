@@ -19,13 +19,13 @@ cf = Fun(cos)
 ecf = Fun(x->cos(x).*exp(x))
 eocf = Fun(x->cos(x)./exp(x))
 
-@test_approx_eq ef[.5] exp(.5)
-@test_approx_eq ecf[.123456] cos(.123456).*exp(.123456)
+@test_approx_eq ef(.5) exp(.5)
+@test_approx_eq ecf(.123456) cos(.123456).*exp(.123456)
 
 r=2.*rand(100) .- 1
 
-@test maximum(abs(ef[r]-exp(r)))<100eps()
-@test maximum(abs(ecf[r]-cos(r).*exp(r)))<100eps()
+@test maximum(abs(ef(r)-exp(r)))<100eps()
+@test maximum(abs(ecf(r)-cos(r).*exp(r)))<100eps()
 
 
 @test norm((ecf-cf.*ef).coefficients)<100eps()
@@ -41,10 +41,10 @@ r=2.*rand(100) .- 1
 ## Diff and cumsum
 
 
-@test norm((ef - diff(ef)).coefficients)<10E-11
+@test norm((ef - ef').coefficients)<10E-11
 
-@test norm((ef - diff(cumsum(ef))).coefficients) < 20eps()
-@test norm((cf - diff(cumsum(cf))).coefficients) < 20eps()
+@test norm((ef - cumsum(ef)').coefficients) < 20eps()
+@test norm((cf - cumsum(cf)').coefficients) < 20eps()
 
 @test_approx_eq sum(ef)  2.3504023872876028
 
@@ -67,12 +67,12 @@ x=1.5
 
 
 
-@test_approx_eq ef[x] exp(x)
+@test_approx_eq ef(x) exp(x)
 
 
 
-@test maximum(abs(ef[r]-exp(r)))<100eps()
-@test maximum(abs(ecf[r]-cos(r).*exp(r)))<100eps()
+@test maximum(abs(ef(r)-exp(r)))<100eps()
+@test maximum(abs(ecf(r)-cos(r).*exp(r)))<100eps()
 
 
 @test norm((ecf-cf.*ef).coefficients)<100eps()
@@ -87,10 +87,10 @@ x=1.5
 ## Diff and cumsum
 
 
-@test norm((ef - diff(ef)).coefficients)<10E-11
+@test norm((ef - ef').coefficients)<10E-11
 
-@test norm((ef - diff(cumsum(ef))).coefficients) < 10eps()
-@test norm((cf - diff(cumsum(cf))).coefficients) < 10eps()
+@test norm((ef - cumsum(ef)').coefficients) < 10eps()
+@test norm((cf - cumsum(cf)').coefficients) < 10eps()
 
 @test_approx_eq sum(ef) 4.670774270471604
 
@@ -100,21 +100,33 @@ x=1.5
 ##Roots
 
 f=Fun(x->sin(10(x-.1)))
-@test norm(f[roots(f)])< 1000eps()
+@test norm(f(roots(f)))< 1000eps()
 
 
 ## ALiasing
 
 f=Fun(x->cos(50acos(x)))
-@test norm(f.coefficients-eye(length(f))[:,51])<100eps()
+@test norm(f.coefficients-eye(ncoefficients(f))[:,51])<100eps()
 
 
 ## Int values
 
-@test_approx_eq Fun(x->2,10)[.1] 2
-@test_approx_eq Fun(x->2)[.1] 2
+@test_approx_eq Fun(x->2,10)(.1) 2
+@test_approx_eq Fun(x->2)(.1) 2
 
 
-@test_approx_eq Fun(Float64[],Chebyshev)[[0.,1.]] [0.,0.]
-@test_approx_eq Fun([],Chebyshev)[0.] 0.
-@test_approx_eq Fun(x->[1.,0.])[0.] [1.,0.]
+@test_approx_eq Fun(Float64[],Chebyshev)([0.,1.]) [0.,0.]
+@test_approx_eq Fun([],Chebyshev)(0.) 0.
+@test_approx_eq Fun(x->[1.,0.])(0.) [1.,0.]
+
+
+
+## broadcast
+
+if VERSION ≥ v"0.5-"
+    f=Fun(exp)
+    @test norm(exp.(f) - exp(f)) < 100eps()
+    @test norm(besselj.(1,f)-besselj(1,f)) < 100eps()
+    @test_approx_eq atan2.(f,1)(0.1) atan2(f(0.1),1)
+    @test_approx_eq atan2.(f,f)(0.1) atan2(f(0.1),f(0.1))
+end

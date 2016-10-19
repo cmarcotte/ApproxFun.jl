@@ -1,14 +1,13 @@
-##
-# LogWeight
-# represents a function on [-1,1] weighted by log((1+x)^α*(1-x)^β)
-##
-
-
-immutable LogWeight{S<:IntervalSpace} <: WeightSpace
+"""
+ LogWeight
+ represents a function on [-1,1] weighted by log((1+x)^α*(1-x)^β)
+"""
+immutable LogWeight{S,DD} <: WeightSpace{S,RealBasis,DD,1}
     α::Float64
     β::Float64
     space::S
 end
+LogWeight(α,β,space)=LogWeight{typeof(space),typeof(domain(space))}(α,β,space)
 
 spacescompatible(A::LogWeight,B::LogWeight)=A.α==B.α && A.β == B.β && spacescompatible(A.space,B.space)
 canonicalspace(A::LogWeight)=A
@@ -30,6 +29,26 @@ function coefficients(f::Vector,sp1::LogWeight,sp2::LogWeight)
     end
 end
 
+for (OPrule,OP) in ((:maxspace_rule,:maxspace),(:union_rule,:union))
+    @eval begin
+        function $OPrule(A::LogWeight,B::LogWeight)
+            if isapprox(A.α,B.α) && isapprox(A.β,B.β)
+                LogWeight(A.α,A.β,$OP(A.space,B.space))
+            else
+                NoSpace()
+            end
+        end
+        # there are no other comatible spaces
+        # this is mostly to overcome typing bug
+        # in spacestes
+        $OPrule(::LogWeight,::JacobiWeight)=NoSpace()
+        $OPrule(::JacobiWeight,::LogWeight)=NoSpace()
+    end
+end
+
+
+
+
 
 
 
@@ -37,7 +56,7 @@ end
 # Same as JacobiWeight
 
 # avoid redundency
-function Multiplication{D<:JacobiWeight,T}(f::Fun{D,T},S::LogWeight)
+function Multiplication{SS,LWS,DD<:IntervalDomain,T}(f::Fun{JacobiWeight{SS,DD},T},S::LogWeight{LWS,DD})
     M=Multiplication(Fun(f.coefficients,space(f).space),S)
     rsp=JacobiWeight(space(f).α,space(f).β,rangespace(M))
     MultiplicationWrapper(f,SpaceOperator(M,S,rsp))
@@ -49,5 +68,3 @@ function Multiplication(f::Fun,S::LogWeight)
     rsp=LogWeight(S.α,S.β,rangespace(M))
     MultiplicationWrapper(f,SpaceOperator(M,S,rsp))
 end
-
-

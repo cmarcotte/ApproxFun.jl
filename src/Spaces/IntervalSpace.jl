@@ -1,25 +1,27 @@
 export continuity
 
 
-abstract IntervalSpace <: RealUnivariateSpace     # We assume basis is real
 
-Space{N<:Number}(d::Vector{N})=Space(Interval(d))
+Space(d::IntervalDomain)=Chebyshev(d)
+
+identity_fun(d::Interval)=Fun(eltype(d)[(d.b+d.a)/2,(d.b-d.a)/2],Chebyshev(d))
+
 
 ## Calculus
 
 
 
 # the default domain space is higher to avoid negative ultraspherical spaces
-Integral(d::IntervalDomain,n::Integer)=Integral(Ultraspherical{1}(d),n)
+Integral(d::IntervalDomain,n::Integer) = Integral(Ultraspherical(1,d),n)
 
 for Func in (:DefiniteIntegral,:DefiniteLineIntegral)
     @eval begin
-        $Func(d::IntervalDomain)=$Func(JacobiWeight(-.5,-.5,Chebyshev(d)))
+        $Func(d::IntervalDomain) = $Func(JacobiWeight(-.5,-.5,Chebyshev(d)))
         function $Func(α::Number,β::Number,d::IntervalDomain)
             @assert α == β
             @assert round(Int,α+.5) == α+.5
             @assert round(Int,α+.5) >= 0
-            $Func(JacobiWeight(α,β,Ultraspherical{round(Int,α+.5)}(d)))
+            $Func(JacobiWeight(α,β,Ultraspherical(round(Int,α+.5),d)))
         end
         $Func(α::Number,β::Number) = $Func(α,β,Interval())
     end
@@ -36,10 +38,10 @@ end
 
 
 
-function continuity{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T},order::Integer)
+function continuity(d::Union{Vector,Tuple},order::Integer)
 
     m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},m-1,m)
+    B=zeros(Operator{mapreduce(eltype,promote_type,d)},m-1,m)
 
     for k=1:m-1
         B[k,k]=Evaluation(d[k],true,order)
@@ -48,10 +50,10 @@ function continuity{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T},order::
     B
 end
 
-function continuity{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T},kr::UnitRange)
+function continuity(d::Union{Vector,Tuple},kr::UnitRange)
     @assert first(kr)==0
     m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},length(kr)*(m-1),m)
+    B=zeros(Operator{mapreduce(eltype,promote_type,d)},length(kr)*(m-1),m)
     for r in kr
         B[(m-1)*r+1:(m-1)*(r+1),:]=continuity(d,r)
     end
@@ -59,39 +61,36 @@ function continuity{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T},kr::Uni
 end
 
 
-
-function dirichlet{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T})
-    m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},2,m)
-    B[1,1]=ldirichlet(d[1]);B[2,end]=rdirichlet(d[end])
-    [B;
-    continuity(d,0:1)]
+for OP in (:dirichlet,:neumann,:periodic)
+    @eval $OP(d::Tuple)=$OP([d...])
 end
 
-function neumann{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T})
-    m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},2,m)
-    B[1,1]=ldirichlet(d[1]);B[2,end]=rdirichlet(d[end])
-    [B;
-    continuity(d,0:1)]
+for DT in (:IntervalDomain,:Space)
+    @eval begin
+        function dirichlet{T<:$DT}(d::Vector{T})
+            m=length(d)
+            B=zeros(Operator{mapreduce(eltype,promote_type,d)},2,m)
+            B[1,1]=ldirichlet(d[1]);B[2,end]=rdirichlet(d[end])
+            [B;
+            continuity(d,0:1)]
+        end
+
+        function neumann{T<:$DT}(d::Vector{T})
+            m=length(d)
+            B=zeros(Operator{mapreduce(eltype,promote_type,d)},2,m)
+            B[1,1]=ldirichlet(d[1]);B[2,end]=rdirichlet(d[end])
+            [B;
+            continuity(d,0:1)]
+        end
+
+
+        function periodic{T<:$DT}(d::Vector{T})
+            m=length(d)
+            B=zeros(Operator{mapreduce(eltype,promote_type,d)},2,m)
+            B[1,1]=ldirichlet(d[1]);B[1,end]=-rdirichlet(d[end])
+            B[2,1]=lneumann(d[1]);B[2,end]=-rneumann(d[end])
+            [B;
+            continuity(d,0:1)]
+        end
+    end
 end
-
-
-function periodic{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T})
-    m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},2,m)
-    B[1,1]=ldirichlet(d[1]);B[1,end]=-rdirichlet(d[end])
-    B[2,1]=lneumann(d[1]);B[2,end]=-rneumann(d[end])
-    [B;
-    continuity(d,0:1)]
-end
-
-function periodic{T<:Union(IntervalDomain,IntervalSpace)}(d::Vector{T})
-    m=length(d)
-    B=zeros(Functional{mapreduce(eltype,promote_type,d)},2,m)
-    B[1:2,1]=ivp(d[1])
-    [B;
-    continuity(d,0:1)]
-end
-
-include("PolynomialSpace.jl")

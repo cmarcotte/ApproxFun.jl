@@ -1,14 +1,8 @@
-if isdir(Pkg.dir("FastGaussQuadrature"))
-    require("FastGaussQuadrature")
-    gausshermite(n)=Main.FastGaussQuadrature.gausshermite(n)
-end
-
-
 points(H::Hermite,n)=gausshermite(n)[1]
 
 plan_transform(H::Hermite,v::Vector) = gausshermite(length(v))
 plan_itransform(H::Hermite,cfs::Vector) = points(H,length(cfs))
-function transform(H::Hermite,vals,plan::@compat(Tuple{Vector,Vector}))
+function transform(H::Hermite,vals,plan::Tuple{Vector,Vector})
     x,w = plan
     V=hermitep(0:length(vals)-1,x)'
     nrm=(V.^2)*w
@@ -16,6 +10,3 @@ function transform(H::Hermite,vals,plan::@compat(Tuple{Vector,Vector}))
     V*(w.*vals)./nrm
 end
 itransform(H::Hermite,cfs,plan::Vector) = hermitep(0:length(cfs)-1,tocanonical(H,plan))*cfs
-
-evaluate{H<:Hermite}(f::Fun{H},x::Number)=dot(hermitep(0:length(f)-1,x),f.coefficients)
-evaluate{H<:Hermite}(f::Fun{H},x::Vector)=hermitep(0:length(f)-1,x)*f.coefficients

@@ -6,7 +6,8 @@ immutable ProductDomain{D,T,dim} <: Domain{T,dim}
     domains::D
 end
 
-ProductDomain(d::Tuple)=ProductDomain{typeof(d),mapreduce(eltype,promote_type,d),mapreduce(ndims,+,d)}(d)
+ProductDomain(d::Tuple) =
+    ProductDomain{typeof(d),mapreduce(eltype,promote_type,d),mapreduce(dimension,+,d)}(d)
 
 fromcanonical(d::BivariateDomain,x::Tuple)=fromcanonical(d,x...)
 tocanonical(d::BivariateDomain,x::Tuple)=tocanonical(d,x...)
@@ -18,6 +19,9 @@ end
 
 
 ProductDomain(A,B)=ProductDomain((A,B))
+*(A::ProductDomain,B::ProductDomain)=ProductDomain(tuple(A.domains...,B.domains...))
+*(A::ProductDomain,B::Domain)=ProductDomain(tuple(A.domains...,B))
+*(A::Domain,B::ProductDomain)=ProductDomain(tuple(A,B.domains...))
 *(A::Domain,B::Domain)=ProductDomain(A,B)
 
 Base.length(d::ProductDomain)=length(d.domains)
@@ -27,12 +31,38 @@ Base.getindex(d::ProductDomain,k::Integer)=d.domains[k]
 
 Base.first(d::ProductDomain)=(first(d[1]),first(d[2]))
 
-function checkpoints(d::ProductDomain)
-    ptsx=checkpoints(d[1])
-    ptsy=checkpoints(d[2])
-    ret=Array(@compat(Tuple{eltype(d[1]),eltype(d[2])}),0)
-    for x in ptsx,y in ptsy
-        push!(ret,(x,y))
+Base.in(x::Vec,d::ProductDomain) = reduce(&,map(in,x,d.domains))
+
+
+function pushappendpts!(ret,xx,pts)
+    if isempty(pts)
+        push!(ret,Vec(xx...))
+    else
+        for x in pts[1]
+            pushappendpts!(ret,(xx...,x),pts[2:end])
+        end
     end
     ret
 end
+
+function checkpoints(d::ProductDomain)
+    pts=map(checkpoints,d.domains)
+    ret=Array(Vec{length(d.domains),mapreduce(eltype,promote_type,d.domains)},0)
+
+    pushappendpts!(ret,(),pts)
+    ret
+end
+
+function points(d::ProductDomain,n::Tuple)
+    @assert length(d.domains) == length(n)
+    pts=map(points,d.domains,n)
+    ret=Array(Vec{length(d.domains),mapreduce(eltype,promote_type,d.domains)},0)
+    pushappendpts!(ret,Vec(x),pts)
+    ret
+end
+
+Base.reverse(d::ProductDomain)=ProductDomain(map(reverse,d.domains))
+
+domainscompatible(a::ProductDomain,b::ProductDomain) =
+                        length(a.domains)==length(b.domains) &&
+                        all(map(domainscompatible,a.domains,b.domains))

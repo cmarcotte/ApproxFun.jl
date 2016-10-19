@@ -1,47 +1,29 @@
-typealias BigFloats Union(BigFloat,Complex{BigFloat})
+typealias BigFloats Union{BigFloat,Complex{BigFloat}}
 
-if VERSION >= v"0.4-dev"
-    # old DFT API: p(x) # deprecated
-    wrap_fft_plan(x::Function) = x
-    # new DFT API
-    immutable FFTPlanWrapper{P}
-        p::P
-    end
-    call(p::FFTPlanWrapper, arg) = p.p * arg
-    wrap_fft_plan(x) = FFTPlanWrapper(x)
-else
-    # 0.3 (old) DFT API
-    wrap_fft_plan(x) = x
-end
-
-# The following implements Bluestein's algorithm, following http://www.dsprelated.com/dspbooks/mdft/Bluestein_s_FFT_Algorithm.html
-# To add more types, add them in the union of the function's signature.
-function Base.fft{T<:BigFloats}(x::Vector{T})
-    n = length(x)
+function Base.fft{F<:Fun}(x::Vector{F})
+    n,T = length(x),mapreduce(eltype,promote_type,x)
     if ispow2(n) return fft_pow2(x) end
     ks = linspace(zero(real(T)),n-one(real(T)),n)
     Wks = exp(-im*convert(T,π)*ks.^2/n)
-    xq,wq = x.*Wks,conj([exp(-im*convert(T,π)*n),reverse(Wks),Wks[2:end]])
+    xq,wq = x.*Wks,conj([exp(-im*convert(T,π)*n);reverse(Wks);Wks[2:end]])
     return Wks.*conv(xq,wq)[n+1:2n]
 end
 
-function Base.ifft{T<:BigFloats}(x::Vector{T})
-    return conj(fft(conj(x)))/length(x)
-end
-
-function Base.ifft!{T<:BigFloats}(x::Vector{T})
+Base.ifft{F<:Fun}(x::Vector{F}) = conj(fft(conj(x)))/length(x)
+function Base.ifft!{F<:Fun}(x::Vector{F})
     y = conj(fft(conj(x)))/length(x)
     x[:] = y
     return x
 end
 
-function Base.conv{T<:Number}(u::StridedVector{T}, v::StridedVector{T})
+function Base.conv{F<:Fun}(u::StridedVector{F}, v::StridedVector)
     nu,nv = length(u),length(v)
     n = nu + nv - 1
     np2 = nextpow2(n)
     pad!(u,np2),pad!(v,np2)
     y = ifft_pow2(fft_pow2(u).*fft_pow2(v))
     #TODO This would not handle Dual/ComplexDual numbers correctly
+    T = promote_type(mapreduce(eltype,promote_type,u),mapreduce(eltype,promote_type,v))
     y = T<:Real ? real(y[1:n]) : y[1:n]
 end
 
@@ -51,8 +33,9 @@ end
 
 # plan_fft for BigFloats (covers Laurent svfft)
 
-Base.plan_fft{T<:BigFloats}(x::Vector{T}) = fft
-Base.plan_ifft{T<:BigFloats}(x::Vector{T}) = ifft
+Base.plan_fft{F<:Fun}(x::Vector{F}) = fft
+Base.plan_ifft{F<:Fun}(x::Vector{F}) = ifft
+Base.plan_ifft!{F<:Fun}(x::Vector{F}) = ifft
 
 # Chebyshev transforms and plans for BigFloats
 
@@ -77,7 +60,7 @@ function chebyshevtransform{T<:BigFloats}(x::Vector{T},plan;kind::Integer=1)
         if n == 1
             x
         else
-            ret = ifft([reverse(x),x[2:end-1]])[1:n]
+            ret = ifft([reverse(x);x[2:end-1]])[1:n]
             ret = T<:Real ? real(ret) : ret
             ret[2:n-1] *= 2
             ret
@@ -92,9 +75,9 @@ function ichebyshevtransform{T<:BigFloats}(x::Vector{T},plan;kind::Integer=1)
         if n == 1
             x
         else
-            w = exp(-im*convert(T,π)*[0:2n-1]/2n)/2
+            w = [exp(-im*convert(T,π)*k/2n)/2 for k=0:2n-1]
             w[1] *= 2;w[n+1] *= 0;w[n+2:end] *= -1
-            ret = fft(w.*[x,one(T),x[end:-1:2]])[n:-1:1]
+            ret = fft(w.*[x;one(T);x[end:-1:2]])[n:-1:1]
             ret = T<:Real ? real(ret) : ret
         end
     elseif kind == 2
@@ -116,7 +99,7 @@ end
 
 # Fourier space plans for BigFloat
 
-function plan_transform{T<:BigFloat}(::Fourier,x::Vector{T})
+function plan_transform{T<:BigFloat,D}(::Fourier{D},x::Vector{T})
     function plan(x)
         v = fft(x)
         n = div(length(x),2)+1
@@ -125,10 +108,10 @@ function plan_transform{T<:BigFloat}(::Fourier,x::Vector{T})
     plan
 end
 
-function plan_itransform{T<:BigFloat}(::Fourier,x::Vector{T})
+function plan_itransform{T<:BigFloat,D}(::Fourier{D},x::Vector{T})
     function plan(x)
         n = div(length(x),2)+1
-        v = complex([x[1:n],x[n-1:-1:2]],[0,-x[2n-2:-1:n+1],0,x[n+1:2n-2]])
+        v = complex([x[1:n];x[n-1:-1:2]],[0;-x[2n-2:-1:n+1];0;x[n+1:2n-2]])
         real(fft(v))
     end
     plan
@@ -138,14 +121,14 @@ end
 
 function plan_transform{T<:BigFloat}(::SinSpace,x::Vector{T})
     function plan(x)
-        imag(fft([zero(T),-x,zero(T),reverse(x)]))[2:length(x)+1]
+        imag(fft([0;-x;0;reverse(x)]))[2:length(x)+1]
     end
     plan
 end
 
 function plan_itransform{T<:BigFloat}(::SinSpace,x::Vector{T})
     function plan(x)
-        imag(fft([zero(T),-x,zero(T),reverse(x)]))[2:length(x)+1]
+        imag(fft([0;-x;0;reverse(x)]))[2:length(x)+1]
     end
     plan
 end
@@ -154,7 +137,7 @@ end
 
 for SP in (:Fourier,:SinSpace), pl in (:plan_transform,:plan_itransform)
     @eval begin
-        function $pl{T<:Complex{BigFloat}}(::$SP,x::Vector{T})
+        function $pl{T<:Complex{BigFloat},D}(::$SP{D},x::Vector{T})
             function plan(x)
                 complex($pl($SP(),real(x))(real(x)),$pl($SP(),imag(x))(imag(x)))
             end

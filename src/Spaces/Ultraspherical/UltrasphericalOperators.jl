@@ -1,84 +1,16 @@
 ##  Jacobi Operator
 
+
+
+
+recA{T}(::Type{T},S::Ultraspherical,k) = (2*(k+order(S)))/(k+one(T))   # one(T) ensures we get correct type
+recB{T}(::Type{T},::Ultraspherical,::) = zero(T)
+recC{T}(::Type{T},S::Ultraspherical,k) = (k-one(T)+2order(S))/(k+one(T))   # one(T) ensures we get correct type
+
 # x p_k
-recα{T}(::Type{T},::Ultraspherical,::)=zero(T)
-
-recβ{T}(::Type{T},::Chebyshev,k)=ifelse(k==1,one(T),one(T)/2)   # one(T) ensures we get correct type,ifelse ensures inlining
-recγ{T}(::Type{T},::Chebyshev,k)=one(T)/2   # one(T) ensures we get correct type
-
-
-recβ{T,λ}(::Type{T},::Ultraspherical{λ},k)=k/(2*(k-one(T)+λ))   # one(T) ensures we get correct type
-recγ{T,λ}(::Type{T},::Ultraspherical{λ},k)=(k-2+2λ)/(2*(k-one(T)+λ))   # one(T) ensures we get correct type
-
-
-
-# function usjacobi_addentries!{T}(λ::Integer,::Type{T},A,kr::Range)
-#     for k=kr
-#         A[k,k-1]=.5(k-one(T))/(k-2+λ)
-#         A[k,k+1]=.5(k+2λ-one(T))/(k+λ)
-#     end
-#     A
-# end
-#
-# addentries!{m,T}(::Recurrence{Ultraspherical{m},T},A,kr::Range)=usjacobi_addentries!(m,T,A,kr)
-
-## Evaluation
-
-function evaluatechebyshev{T<:Number}(n::Integer,x::T)
-    if n == 1
-        [one(T)]
-    else
-        p = zeros(T,n)
-        p[1] = one(T)
-        p[2] = x
-
-        for j=2:n-1
-            p[j+1] = 2x*p[j] - p[j-1]
-        end
-
-        p
-    end
-end
-
-
-
-
-
-##TODO: the overloading as both vector and row vector may be confusing
-function Base.getindex{T<:Number}(op::Evaluation{Chebyshev,Bool,T},k::Range)
-    x = op.x
-    d = domain(op)
-    p = op.order
-    cst = (2/(d.b-d.a))^p
-
-    if x
-        ret = ones(T,length(k))
-    elseif !x
-        ret = Array(T,length(k))
-        k1=1-first(k)
-        for j=k
-            ret[j+k1]=(-1)^(p+1)*(-one(T))^j
-        end
-    end
-
-    for m=0:p-1
-        k1=1-first(k)
-        for j=k
-            ret[j+k1] *= (j-1)^2-m^2
-        end
-        ret /= 2m+1
-    end
-
-    return ret*cst
-end
-
-function Base.getindex(op::Evaluation{Chebyshev},k::Range)
-    if op.order == 0
-        evaluatechebyshev(k[end],tocanonical(domain(op),op.x))[k]
-    else
-        error("Only zero–second order implemented")
-    end
-end
+recα{T}(::Type{T},::Ultraspherical,::) = zero(T)
+recβ{T}(::Type{T},S::Ultraspherical,k) = k/(2*(k-one(T)+order(S)))   # one(T) ensures we get correct type
+recγ{T}(::Type{T},S::Ultraspherical,k) = (k-2+2order(S))/(2*(k-one(T)+order(S)))   # one(T) ensures we get correct type
 
 
 
@@ -86,79 +18,26 @@ end
 # these are special cases
 
 
-Base.stride{U<:Ultraspherical,V<:Ultraspherical}(M::Multiplication{U,V})=stride(M.f)
+Base.stride{U<:Chebyshev,V<:Ultraspherical}(M::ConcreteMultiplication{U,V}) =
+    stride(M.f)
+Base.stride{U<:Ultraspherical,V<:Chebyshev}(M::ConcreteMultiplication{U,V}) =
+    stride(M.f)
+Base.stride{U<:Ultraspherical,V<:Ultraspherical}(M::ConcreteMultiplication{U,V}) =
+    stride(M.f)
 
 
-function chebmult_addentries!(cfs::Vector,A,kr::Range)
-    toeplitz_addentries!(.5cfs,A,kr)
-    hankel_addentries!(.5cfs,A,intersect(2:kr[end],kr))
-end
+function Multiplication{C<:Chebyshev}(f::Fun{C},sp::Ultraspherical{Int})
+    if order(sp) == 1
+        cfs = f.coefficients
+        MultiplicationWrapper(f,
+            SpaceOperator(SymToeplitzOperator(cfs/2) +
+                                HankelOperator(@compat(view(cfs,3:length(cfs)))/(-2)),
+                          sp,sp))
 
-
-for TYP in (:UnitRange,:Range) # needed to avoid confusion
-    @eval begin
-        addentries!{T}(M::Multiplication{Chebyshev,Chebyshev,T},A,kr::$TYP)=chebmult_addentries!(coefficients(M.f),A,kr)
-
-        function addentries!{T}(M::Multiplication{Chebyshev,Ultraspherical{1},T},A,kr::$TYP)
-            cfs=coefficients(M.f)
-            toeplitz_addentries!(.5cfs,A,kr)
-            hankel_addentries!(-.5cfs[3:end],A,kr)
-        end
+    else
+        ConcreteMultiplication(f,sp)
     end
 end
-
-function addentries!{λ,PS<:PolynomialSpace,T}(M::Multiplication{Ultraspherical{λ},PS,T},A,kr::UnitRange)
-    a=coefficients(M.f)
-    for k=kr
-        A[k,k]=a[1]
-    end
-
-    if length(a) > 1
-        jkr=max(1,kr[1]-length(a)+1):kr[end]+length(a)-1
-
-        J=subview(Recurrence(domainspace(M)),jkr,jkr)
-        C1=2λ*J
-        addentries!(C1,a[2],A,kr)
-        C0=isbaeye(jkr)
-
-        for k=1:length(a)-2
-            C1,C0=2(k+λ)/(k+one(T))*J*C1-(k+2λ-one(T))/(k+one(T))*C0,C1
-            addentries!(C1,a[k+2],A,kr)
-        end
-    end
-
-    A
-end
-
-
-function addentries!{PS<:PolynomialSpace,T}(M::Multiplication{Chebyshev,PS,T},A,kr::UnitRange)
-    a=coefficients(M.f)
-
-    for k=kr
-        A[k,k]=a[1]
-    end
-
-    if length(M.f) > 1
-        sp=M.space
-        jkr=max(1,kr[1]-length(a)+1):kr[end]+length(a)-1
-
-        #Multiplication is transpose
-        J=subview(Recurrence(sp),jkr,jkr)
-        C1=J
-        addentries!(C1,a[2],A,kr)
-        C0=isbaeye(jkr)
-
-        for k=1:length(a)-2
-            C1,C0=2J*C1-C0,C1
-            addentries!(C1,a[k+2],A,kr)
-        end
-    end
-
-    A
-end
-
-
-
 
 
 ## Derivative
@@ -168,68 +47,67 @@ end
 #Derivative(d::IntervalDomain)=Derivative(1,d)
 
 
-rangespace{λ}(D::Derivative{Ultraspherical{λ}})=Ultraspherical{λ+D.order}(domain(D))
-bandinds{S<:Ultraspherical}(D::Derivative{S})=0,D.order
-bandinds{S<:Ultraspherical}(D::Integral{S})=-D.order,0
-Base.stride{S<:Ultraspherical}(D::Derivative{S})=D.order
+Derivative{LT,DD<:Interval}(sp::Ultraspherical{LT,DD},m::Integer) =
+    ConcreteDerivative(sp,m)
+function Integral{LT,DD<:Interval}(sp::Ultraspherical{LT,DD},m::Integer)
+    λ = order(sp)
+    if m ≤ λ
+        ConcreteIntegral(sp,m)
+    else # Convert up
+        nsp = Ultraspherical(λ+1,domain(sp))
+        IntegralWrapper(Integral(nsp,m)*Conversion(sp,nsp),m)
+    end
+end
 
-function addentries!{λ}(D::Derivative{Ultraspherical{λ}},A,kr::Range)
+
+rangespace{LT,DD<:Interval}(D::ConcreteDerivative{Ultraspherical{LT,DD}}) =
+    Ultraspherical(order(domainspace(D))+D.order,domain(D))
+bandinds{LT,DD<:Interval}(D::ConcreteDerivative{Ultraspherical{LT,DD}}) = 0,D.order
+bandinds{LT,DD<:Interval}(D::ConcreteIntegral{Ultraspherical{LT,DD}}) = -D.order,0
+Base.stride{LT,DD<:Interval}(D::ConcreteDerivative{Ultraspherical{LT,DD}}) = D.order
+
+
+function getindex{TT,DD<:Interval,K,T}(D::ConcreteDerivative{Ultraspherical{TT,DD},K,T},
+                                      k::Integer,j::Integer)
     m=D.order
     d=domain(D)
+    λ=order(domainspace(D))
 
-    @assert isa(d,Interval)
-
-    if λ == 0
-        C=.5pochhammer(1.,m-1)*(4./(d.b-d.a)).^m
-        for k=kr
-            A[k,k+m] += C*(m+k-1)
-        end
+    if j==k+m
+        (pochhammer(one(T)*λ,m)*(4./(d.b-d.a)).^m)::T
     else
-        C=pochhammer(1.λ,m)*(4./(d.b-d.a)).^m
-        for k=kr
-            A[k,k+m] += C
-        end
+        zero(T)
     end
-
-    A
 end
 
 
 ## Integral
 
-function linesum{S<:Ultraspherical}(f::Fun{S})
-    d=domain(f)
-    @assert isa(d,Interval)
-    sum(Fun(f.coefficients,S()))*abs(d.b-d.a)/2
-end
+linesum{LT,DD<:Interval}(f::Fun{Ultraspherical{LT,DD}}) =
+    sum(setcanonicaldomain(f))*arclength(d)/2
 
 
 
-# TODO: include in addentries! to speed up
-Integral(sp::Chebyshev,m::Integer)=IntegralWrapper(
-    TimesOperator([Integral(Ultraspherical{m}(domain(sp)),m),Conversion(sp,Ultraspherical{m}(domain(sp)))]),m)
 
-rangespace{λ}(D::Integral{Ultraspherical{λ}})=Ultraspherical{λ-D.order}(domain(D))
 
-function addentries!{λ}(D::Integral{Ultraspherical{λ}},A,kr::Range)
-    m=D.order
-    d=domain(D)
+rangespace{LT,DD<:Interval}(D::ConcreteIntegral{Ultraspherical{LT,DD}}) =
+    order(domainspace(D)) == 1 ? Chebyshev() : Ultraspherical(order(domainspace(D))-D.order,domain(D))
+
+function getindex{LT,DD<:Interval}(Q::ConcreteIntegral{Ultraspherical{LT,DD}},k::Integer,j::Integer)
+    T=eltype(Q)
+    m=Q.order
+    d=domain(Q)
+    λ=order(domainspace(Q))
     @assert m<=λ
-    @assert isa(d,Interval)
 
-    if λ == 1
-        C = .5(d.b-d.a)
-        for k=max(kr[1],2):kr[end]
-            A[k,k-1] += C./(k-1)
-        end
-    elseif λ > 1
-        C=pochhammer(1.λ,-m)*(.25(d.b-d.a))^m
-        for k=kr
-            A[k,k-m] += C
-        end
+    if λ == 1 && k==j+1
+        C = (d.b-d.a)/2
+        T(C./(k-1))
+    elseif λ > 1 && k==j+m
+        T(pochhammer(one(T)*λ,-m)*((d.b-d.a)/4)^m)
+    else
+        zero(T)
     end
-
-    A
 end
 
 
@@ -237,89 +115,234 @@ end
 ## Conversion Operator
 
 
-
-
-function Conversion{a,b}(A::Ultraspherical{a},B::Ultraspherical{b})
-    @assert b >= a
-
-    if b==a
-        eye(A)
-    elseif b==a+1
-        Conversion{Ultraspherical{a},Ultraspherical{b},promote_type(Float64,real(eltype(domain(A))),real(eltype(domain(B))))}(A,B)
+function Conversion(A::Chebyshev,B::Ultraspherical)
+    if order(B) ≤ 1
+        ConcreteConversion(A,B)
     else
         d=domain(A)
-        TimesOperator(Conversion(Ultraspherical{b-1}(d),B),Conversion(A,Ultraspherical{b-1}(d)))
+        US=Ultraspherical(order(B)-1,d)
+        ConversionWrapper(TimesOperator(Conversion(US,B),
+                                        Conversion(Chebyshev(d),US)))
+    end
+end
+
+function Conversion(A::Ultraspherical,B::Chebyshev)
+    if order(A) == 1//2
+        ConcreteConversion(A,B)
+    else
+        error("Not implemented")
     end
 end
 
 
-function addentries!(M::Conversion{Chebyshev,Ultraspherical{1}},A,kr::Range)
-    # this uses that 0.5 is exact, so no need for special bigfloat def
-    for k=kr
-        A[k,k] += (k == 1)? 1. : .5
-        A[k,k+2] += -.5
-    end
+maxspace_rule(A::Ultraspherical,B::Chebyshev) = A
 
-    A
+
+function Conversion(A::Ultraspherical,B::Ultraspherical)
+    a=order(A); b=order(B)
+    if b==a
+        ConversionWrapper(eye(A))
+    elseif a<b≤a+1  || b<a≤b+1
+        ConcreteConversion(A,B)
+    elseif b ≠ 1
+        d=domain(A)
+        ConversionWrapper(TimesOperator(Conversion(Ultraspherical(b-1,d),B),
+                                        Conversion(A,Ultraspherical(b-1,d))))
+    else
+        error("Cannot convert from $A to $B")
+    end
 end
 
-function addentries!{m,λ,T}(M::Conversion{Ultraspherical{m},Ultraspherical{λ},T},A,kr::Range)
-    @assert λ==m+1
+maxspace_rule(A::Ultraspherical,B::Ultraspherical) = order(A) > order(B) ? A : B
+
+
+function getindex{DD,C<:Chebyshev,T}(M::ConcreteConversion{C,Ultraspherical{Int,DD},T},
+                                     k::Integer,j::Integer)
+   # order must be 1
+    if k==j==1
+        one(T)
+    elseif k==j
+        one(T)/2
+    elseif j==k+2
+        -one(T)/2
+    else
+        zero(T)
+    end
+end
+
+
+function getindex{DD,T}(M::ConcreteConversion{Ultraspherical{Int,DD},Ultraspherical{Int,DD},T},
+                            k::Integer,j::Integer)
+    #  we can assume that λ==m+1
+    λ=order(rangespace(M))
     c=λ-one(T)  # this supports big types
-    for k=kr
-        A[k,k] += c/(k - 2 + λ)
-        A[k,k+2] += -c/(k + λ)
-    end
-
-    A
-end
-
-function multiplyentries!(M::Conversion{Chebyshev,Ultraspherical{1}},A,kr::Range)
-    cr=columnrange(A)::Range1{Int}
-
-    #We assume here that the extra rows are redundant
-    for k=max(2,kr[1]):kr[end]+2,j=cr
-        A[k,j] *= .5
-    end
-
-    #We assume that A has allocated 2 more bandwidth
-    for k=max(1,kr[1]):kr[end],j=(cr[1]+2):cr[end]
-        A[k,j] -= A[k+2,j-2]
+    if k==j
+        c/(k - 2 + λ)
+    elseif j==k+2
+        -c/(k + λ)
+    else
+        zero(T)
     end
 end
 
-function multiplyentries!{m,λ,T}(M::Conversion{Ultraspherical{m},Ultraspherical{λ},T},A,kr::Range)
-    @assert λ==m+1
-    cr=columnrange(A)::Range1{Int64}
-
-    c = λ-one(T)
-    #We assume here that the extra rows are redundant
-    for k=max(kr[1],1):kr[end]+2,j=cr
-        A[k,j] *= c./(k - 2. + λ)
-    end
-
-    #We assume that A has allocated 2 more bandwidth
-    for k=max(kr[1],1):kr[end],j=(cr[1]+2):cr[end]
-        A[k,j] -= A[k+2,j-2]
+function getindex{LT,DD,T}(M::ConcreteConversion{Ultraspherical{LT,DD},Ultraspherical{LT,DD},T},
+                            k::Integer,j::Integer)
+    λ=order(rangespace(M))
+    if order(domainspace(M))+1==λ
+        c=λ-one(T)  # this supports big types
+        if k==j
+            c/(k - 2 + λ)
+        elseif j==k+2
+            -c/(k + λ)
+        else
+            zero(T)
+        end
+    else
+        error("Not implemented")
     end
 end
 
-bandinds{m,λ}(C::Conversion{Ultraspherical{m},Ultraspherical{λ}})=0,2
-Base.stride{m,λ}(C::Conversion{Ultraspherical{m},Ultraspherical{λ}})=2
+
+bandinds{DD}(C::ConcreteConversion{Chebyshev{DD},Ultraspherical{Int,DD}}) = 0,2  # order == 1
+bandinds{DD}(C::ConcreteConversion{Ultraspherical{Int,DD},Ultraspherical{Int,DD}}) = 0,2
+
+bandinds{LT,DD}(C::ConcreteConversion{Chebyshev{DD},Ultraspherical{LT,DD}}) =
+    0,order(rangespace(C))==1?2:∞
+bandinds{LT,DD}(C::ConcreteConversion{Ultraspherical{LT,DD},Chebyshev{DD}}) =
+    0,order(domainspace(C))==1?2:∞
+
+bandinds{LT1,LT2,DD}(C::ConcreteConversion{Ultraspherical{LT1,DD},Ultraspherical{LT2,DD}}) =
+    0,order(domainspace(C))+1==order(rangespace(C))?2:∞
+
+Base.stride{DD}(C::ConcreteConversion{Chebyshev{DD},Ultraspherical{Int,DD}}) = 2
+Base.stride{LT1,LT2,DD}(C::ConcreteConversion{Ultraspherical{LT1,DD},Ultraspherical{LT2,DD}}) = 2
 
 
 ## coefficients
 
 # return the space that has banded Conversion to the other
-function conversion_rule{aorder,border}(a::Ultraspherical{aorder},b::Ultraspherical{border})
-    @assert domainscompatible(a,b)
+conversion_rule(a::Chebyshev,b::Ultraspherical{Int}) =
+    if domainscompatible(a,b)
+        a
+    else
+        NoSpace()
+    end
 
-    aorder < border?a:b
+conversion_rule{LT}(a::Ultraspherical{LT},b::Ultraspherical{LT}) =
+    if domainscompatible(a,b) && isapproxinteger(order(a)-order(b))
+        order(a) < order(b)?a:b
+    else
+        NoSpace()
+    end
+
+
+
+function coefficients(g::Vector,sp::Ultraspherical{Int},C::Chebyshev)
+    if order(sp) == 1
+        ultraiconversion(g)
+    else
+        # do one at a time
+        coefficients(g,sp,Ultraspherical(1,domain(sp)),C)
+    end
+end
+function coefficients(g::Vector,C::Chebyshev,sp::Ultraspherical)
+    if order(sp) == 1
+        ultraconversion(g)
+    else
+        # do one at a time
+        coefficients(g,C,Ultraspherical(1,domain(sp)),sp)
+    end
 end
 
 
-coefficients(g::Vector,::Ultraspherical{1},::Chebyshev)=ultraiconversion(g)
-coefficients(g::Vector,::Chebyshev,::Ultraspherical{1})=ultraconversion(g)
+# TODO: include in getindex to speed up
+Integral{DD<:Interval}(sp::Chebyshev{DD},m::Integer) =
+    IntegralWrapper(TimesOperator([Integral(Ultraspherical(m,domain(sp)),m),
+                                   Conversion(sp,Ultraspherical(m,domain(sp)))]),m)
 
 
 
+
+## Non-banded conversions
+
+function getindex{DD,LT,C<:Chebyshev,T}(M::ConcreteConversion{C,Ultraspherical{LT,DD},T},
+                                     k::Integer,j::Integer)
+    λ = order(rangespace(M))
+    if λ == 1
+        if k==j==1
+            one(T)
+        elseif k==j
+            one(T)/2
+        elseif j==k+2
+            -one(T)/2
+        else
+            zero(T)
+        end
+    elseif λ == 0.5
+        # Cheb-to-Leg
+        if j==k==1
+            one(T)
+        elseif j==k
+            T(sqrt(π)/(2FastTransforms.Λ(k-1)))
+        elseif k < j && iseven(k-j)
+            T(-(j-1)*(k-0.5)*(FastTransforms.Λ((j-k-2)/2)/(j-k))*
+                            (FastTransforms.Λ((j+k-3)/2)/(j+k-1)))
+        else
+            zero(T)
+        end
+    else
+        error("Not implemented")
+    end
+end
+
+
+function getindex{DD,LT,C<:Chebyshev,T}(M::ConcreteConversion{Ultraspherical{LT,DD},C,T},
+                                     k::Integer,j::Integer)
+    λ = order(domainspace(M))
+    if λ == 1
+        # order must be 1
+        if k==j==1
+            one(T)
+        elseif k==j
+            one(T)/2
+        elseif j==k+2
+            -one(T)/2
+        else
+            zero(T)
+        end
+    elseif λ == 0.5
+        if k==1 && isodd(j)
+            T(FastTransforms.Λ((j-1)/2)^2/π)
+        elseif k ≤ j && iseven(k-j)
+            T(FastTransforms.Λ((j-k)/2)*FastTransforms.Λ((k+j-2)/2)*2/π)
+        else
+            zero(T)
+        end
+    else
+        error("Not implemented")
+    end
+end
+
+
+
+function getindex{DD,LT,LT2,T}(M::ConcreteConversion{Ultraspherical{LT,DD},
+                                                     Ultraspherical{LT2,DD},T},
+                                     k::Integer,j::Integer)
+    λ1 = order(domainspace(M))
+    λ2 = order(rangespace(M))
+    if abs(λ1-λ2) < 1
+        if j ≥ k && iseven(k-j)
+            T((λ1 < λ2 && k ≠ j ? -1 : 1) *  # fix sign for lgamma
+                exp(lgamma(λ2)+log(k-1+λ2)-lgamma(λ1)-lgamma(λ1-λ2) + lgamma((j-k)/2+λ1-λ2)-
+                lgamma((j-k)/2+1)+lgamma((k+j-2)/2+λ1)-lgamma((k+j-2)/2+λ2+1)))
+        else
+            zero(T)
+        end
+    else
+        error("Not implemented")
+    end
+end
+
+
+ReverseOrientation(S::Ultraspherical) = ReverseOrientationWrapper(SpaceOperator(NegateEven(),S,reverseorientation(S)))
+Reverse(S::Ultraspherical) = ReverseWrapper(SpaceOperator(NegateEven(),S,S))

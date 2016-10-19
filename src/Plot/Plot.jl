@@ -1,239 +1,323 @@
-export setplotter, domainplot
-
-# these defaults are overloaded as packages are loaded
-plotter=@compat Dict(:contour=>"Gadfly",
-    :plot=>"Gadfly",
-    :surf=>"PyPlot")
+export domainplot, coefficientplot, complexplot
 
 
-function setplotter(key,val)
-    global plotter
-    @assert val=="PyPlot" || val =="Gadfly" || val =="GLPlot"
-    plotter[key]=val
-    plotter
-end
 
-function setplotter(str)
-    if str=="PyPlot"
-        setplotter(:contour,str)
-        setplotter(:plot,str)
-        setplotter(:surf,str)
-    elseif str == "GLPlot"
-        setplotter(:surf,str)
-    else
-        setplotter(:contour,str)
-        setplotter(:plot,str)
-    end
-end
-
-
-if isdir(Pkg.dir("GLPlot"))
-    include("GLPlot.jl")
-    setplotter("GLPlot")
-end
-if isdir(Pkg.dir("PyPlot"))
-    include("PyPlot.jl")
-    setplotter("PyPlot")
-end
-
-include("Gadfly.jl")
-
-if isdir(Pkg.dir("Gadfly"))
-    setplotter("Gadfly")
-end
 if isdir(Pkg.dir("TikzGraphs"))
     include("introspect.jl")
 end
 
-function plot(opts...;kwds...)
-    if plotter[:plot]=="Gadfly"
-        gadflyplot(opts...;kwds...)
-    elseif plotter[:plot]=="PyPlot"
-        pyplot(opts...;kwds...)
-    else
-        error("Plotter " * plotter[:plot] * " not supported.")
-    end
-end
-
-function layer(opts...)
-    if plotter[:plot]=="Gadfly"
-        gadflylayer(opts...)
-    elseif plotter[:plot]=="PyPlot"
-        pyplot(opts...)
-    else
-        error("Plotter " * plotter[:plot] * " not supported.")
-    end
-end
-
-function contour(x,y::Vector,z::Array,v...;opts...)
-    if plotter[:contour]=="Gadfly"
-        gadflycontour(x,y,z,v...;opts...)
-    elseif plotter[:contour]=="PyPlot"
-        pycontour(x,y,z,v...;opts...)
-    else
-        error("Plotter " * plotter[:contour] * " not supported.")
-    end
-end
-
-function surf(x...;opts...)
-    if plotter[:surf]=="GLPlot"
-        glsurf(x...;opts...)
-    elseif plotter[:surf]=="PyPlot"
-        pysurf(x...;opts...)
-    else
-        error("Plotter " * plotter[:surf] * " not supported.")
-    end
-end
 
 
 
 ## Fun routines
 
 
-for OP in (:plot,:layer)
-    @eval begin
-        function $OP{S,T<:Real}(f::Fun{S,T},v...;opts...)
-            f=pad(f,3length(f)+50)
-            $OP(points(f),values(f),v...;opts...)
-        end
-
-        function $OP{S,T<:Complex}(f::Fun{S,T},v...;opts...)
-            f=pad(f,3length(f)+50)
-            $OP(points(f),values(f),v...;opts...)
-        end
-
-        function $OP{F<:Fun}(f::Vector{F},v...;opts...)
-            if plotter[:plot]=="PyPlot"
-                for k=1:length(f)
-                    $OP(f[k],v...;opts...)
-                end
-            else
-                n=3mapreduce(length,max,f)+50
-                m=length(f)
-                X,Y=Array(Float64,n,m),Array(Float64,n,m)
-                for k=1:length(f)
-                    X[:,k]=points(space(f[k]),n)
-                    Y[:,k]=values(pad(f[k],n))
-                end
-                plot(X,Y,v...;opts...)
-            end
-        end
-
-        function $OP{S}(r::Range,f::Fun{S,Float64},v...;opts...)
-            $OP([r],f[[r]],v...;opts...)
-        end
-    end
-end
-
-function complexplot(f::Fun,v...;opts...)
-    f=pad(f,3length(f)+50)
-    vals =values(f)
-    d = domain(f)
-    if isa(d,Circle)
-        plot(real([vals,vals[1]]),imag([vals,vals[1]]),v...;opts...)
+function plotptsvals(f::Fun)
+    if isinf(dimension(space(f)))
+        f=pad(f,3ncoefficients(f)+50)
     else
-        plot(real(vals),imag(vals),v...;opts...)
+        f=pad(f,dimension(space(f)))
     end
+    return points(f),values(f)
 end
 
-function complexplot{F<:Fun}(f::Vector{F},v...;opts...)
-    for k=1:length(f)
-        complexplot(f[k],v...;opts...)
+function plotptsvals{S<:JacobiWeight}(f::Fun{S})
+    f=pad(f,3ncoefficients(f)+50)
+    s=space(f)
+    pts,vals=points(f),values(f)
+    # add endpoints so that singularity is viewable
+    if s.α ≥ 0
+        pts=insert!(pts,1,first(domain(f)))
+        vals=insert!(vals,1,first(f))
     end
+    if s.β ≥ 0
+        pts=push!(pts,last(domain(f)))
+        vals=push!(vals,last(f))
+    end
+
+    pts,vals
 end
 
-function complexlayer(f::Fun,v...;opts...)
-    f=pad(f,3length(f)+50)
-    vals =values(f)
-    d = domain(f)
-    if isa(d,Circle)
-        layer(real([vals,vals[1]]),imag([vals,vals[1]]),v...;opts...)
+
+## Recipes
+
+
+@recipe function f{S,T<:Real}(g::Fun{S,T})
+    plotptsvals(g)
+end
+@recipe function f{S,T<:Real}(g::Fun{S,Complex{T}})
+    x,v=plotptsvals(g)
+    x,Vector{T}[real(v),imag(v)]
+end
+
+
+@recipe function f{S,V,T<:Real}(x::Fun{V,T},y::Fun{S,T})
+    M=3max(ncoefficients(x),ncoefficients(y))+50
+    values(pad(x,M)),values(pad(y,M))
+end
+
+
+@recipe function f{S,T<:Real}(x::AbstractVector{T},g::Fun{S,T})
+    x,g(x)
+end
+
+@recipe function f{S,T<:Real}(x::AbstractVector{T},g::Fun{S,Complex{T}})
+    v=g(x)
+    x,Vector{T}[real(v),imag(v)]
+end
+
+
+@recipe function f{F<:Fun}(G::AbstractVector{F})
+    x=Vector{Float64}[]
+    v=Vector{Float64}[]
+    for g in G
+        xx,vv=plotptsvals(g)
+        push!(x,xx)
+        push!(v,vv)
+    end
+    x,v
+end
+
+@recipe function f{T<:Real,F<:Fun}(x::AbstractVector{T},G::AbstractVector{F})
+    v=Vector{Float64}[]
+    for g in G
+        push!(v,g(x))
+    end
+    x,v
+end
+
+
+function complexplotvals(f::Fun)
+    vals =plotptsvals(f)[2]
+    if isa(domain(f),PeriodicDomain)
+        real([vals;vals[1]]),imag([vals;vals[1]])
     else
-        layer(real(vals),imag(vals),v...;opts...)
+        real(vals),imag(vals)
     end
 end
 
-function complexlayer{F<:Fun}(f::Vector{F},v...;opts...)
-    typeof(complexlayer(f[1],v...;opts...)[1])[complexlayer(f[k],v...;opts...)[1] for k=1:length(f)]
+@userplot ComplexPlot
+
+@recipe function f(h::ComplexPlot)
+    @assert length(h.args)==1
+    complexplotvals(h.args[1])
 end
 
-for (plt,TYP) in ((:plot,:Real),(:complexplot,:Complex),(:layer,:Real),(:complexlayer,:Complex))
-    @eval $plt{S<:Union(PiecewiseSpace,ArraySpace),T<:$TYP}(f::Fun{S,T},v...;opts...)=$plt(vec(f),v...;opts...)
+@recipe function f(dd::Domain)
+    x,y = complexplotvals(Fun(identity,dd))
+    # @series (x,y)
+    # @series begin
+    #     primary := false
+    #     ∂(dd)
+    # end
+end
+
+@recipe function f(dd::UnionDomain)
+    @series dd[1]
+    for k=2:length(dd)
+        @series begin
+            primary := false
+            dd[k]
+        end
+    end
+end
+
+
+@recipe function f{F<:Domain}(G::AbstractVector{F})
+    x=Vector{Float64}[]
+    v=Vector{Float64}[]
+    for g in G
+        xx,vv=complexplotvals(g)
+        push!(x,xx)
+        push!(v,vv)
+    end
+    x,v
 end
 
 
 
-## Multivariate
+@userplot DomainPlot
 
-function contour(f::MultivariateFun,v...;opts...)
-    f=chop(f,10e-10)
-    f=pad(f,max(size(f,1),20),max(size(f,2),20))
-    vals=values(f)
-    if norm(imag(vals))>10e-9
+@recipe function f(D::DomainPlot)
+    @assert length(D.args)==1
+    g=D.args[1]
+    @assert isa(g,Fun)
+
+    domain(g)
+end
+
+
+
+@userplot CoefficientPlot
+
+@recipe function f(C::CoefficientPlot)
+    @assert length(C.args)==1
+    g=C.args[1]
+    @assert isa(g,Fun)
+
+    seriestype --> :scatter
+    yscale --> :log10
+    markersize := max(round(Int,5 - log10(ncoefficients(g))),1)
+    xlims --> (0,1.01ncoefficients(g))
+    abs(g.coefficients)
+end
+
+
+
+@recipe function f{S<:Union{ArraySpace,TupleSpace},T<:Real}(g::Fun{S,T})
+    vec(g)
+end
+
+@recipe function f{S<:PiecewiseSpace,T<:Real}(g::Fun{S,T})
+    p=pieces(g)
+    for k=1:length(p)
+        @series begin
+            primary := (k==1)
+            p[k]
+        end
+    end
+end
+
+
+
+@recipe function f{S<:DiracSpace,T<:Real}(g::Fun{S,T})
+    pts=space(g).points
+    n=length(pts)
+    ws=pad(g.coefficients,length(pts))
+
+    xlims --> (minimum(pts)-1.,maximum(pts)+1.)
+
+    for k=1:length(pts)
+        @series begin
+            primary --> (k==1)
+            ones(2)*pts[k],[0,1]*ws[k]
+        end
+        @series begin
+            linestyle := :dot
+            primary := false
+            ones(2)*pts[k],[1,2]*ws[k]
+        end
+    end
+end
+
+@recipe function f{S<:PointSpace,T<:Real}(g::Fun{S,T})
+    pts=space(g).points
+    n=length(pts)
+    ws=pad(g.coefficients,length(pts))
+
+    xlims --> (minimum(pts)-1.,maximum(pts)+1.)
+
+    for k=1:length(pts)
+        @series begin
+            primary := (k==1)
+            ones(2)*pts[k],[0,1]*ws[k]
+        end
+    end
+end
+
+
+
+@recipe function f{S<:HeavisideSpace,T<:Real}(g::Fun{S,T})
+    pts=domain(g).points
+    n=length(pts)
+    ws=pad(g.coefficients,dimension(space(g)))
+
+    lnsx=Array(Float64,0)
+    lnsy=Array(Float64,0)
+    dtsx=Array(Float64,0)
+    dtsy=Array(Float64,0)
+    for k=1:n-1
+        push!(lnsx,pts[k])
+        push!(lnsy,ws[k])
+        push!(lnsx,pts[k+1])
+        push!(lnsy,ws[k])
+
+
+        if k != n-1
+            # dotted line, with NaN to separate
+            push!(dtsx,pts[k+1])
+            push!(dtsx,pts[k+1])
+            push!(dtsx,pts[k+1])
+
+            push!(dtsy,ws[k])
+            push!(dtsy,ws[k+1])
+            push!(dtsy,NaN)
+
+            # extra point for NaN
+            push!(lnsx,pts[k+1])
+            push!(lnsy,NaN)
+        end
+    end
+
+
+    @series begin
+        primary --> true
+        lnsx,lnsy
+    end
+
+    @series begin
+       primary := false
+       linestyle := :dot
+       fillrange := nothing
+       dtsx,dtsy
+    end
+end
+
+###
+# Multivariate
+###
+
+
+@recipe function f{S<:UnivariateSpace,
+                    V<:UnivariateSpace,
+        SV<:TensorSpace}(g::ProductFun{S,V,SV})
+    g=chop(g,10e-10)
+    g=pad(g,max(size(g,1),20),max(size(g,2),20))
+    vals=values(g)
+
+    seriestype --> :surface
+
+    if norm(imag(vals),Inf)>10e-9
         warn("Imaginary part is non-neglible.  Only plotting real part.")
     end
 
-    contour(points(space(f,1),size(vals,1)),points(space(f,2),size(vals,2)),real(vals),v...;opts...)
+    points(space(g,1),size(vals,1)),points(space(g,2),size(vals,2)),real(vals).'
 end
 
-contour(f::Fun,v...;opts...)=contour(ProductFun(f),v...;opts...)
+@recipe function f{S<:UnivariateSpace,
+                    V<:UnivariateSpace,
+        SV<:TensorSpace}(g::LowRankFun{S,V,SV})
+    g=chop(g,10e-10)
+    vals=values(g)
 
+    seriestype --> :surface
 
+    if norm(imag(vals),Inf)>10e-9
+        warn("Imaginary part is non-neglible.  Only plotting real part.")
+    end
 
-## 3D plotting
-# TODO: The extra vals should only be added for periodicity?
-function plot(xx::Range,yy::Range,f::MultivariateFun,v...;opts...)
-    vals      = evaluate(f,xx,yy)
-    #vals=[vals[:,1] vals vals[:,end]];
-    #vals=[vals[1,:]; vals; vals[end,:]]
-    surf([xx],[yy],real(vals),v...;opts...)
-end
-
-function plot(xx::Range,yy::Range,f::MultivariateFun,obj,window)
-    vals      = evaluate(f,xx,yy)
-    #vals=[vals[:,1] vals vals[:,end]];
-    #vals=[vals[1,:]; vals; vals[end,:]]
-    glsurfupdate(real(vals),obj,window)
+    points(space(g,1),size(vals,1)),points(space(g,2),size(vals,2)),real(vals).'
 end
 
 
-plot(f::MultivariateFun;opts...)=surf(points(f,1),points(f,2),real(values(f));opts...)
-plot{S,V,SS<:TensorSpace}(f::ProductFun{S,V,SS};opts...)=surf(vecpoints(f,1),vecpoints(f,2),real(values(f));opts...)
-plot(f::LowRankFun;opts...)=surf(vecpoints(f,1),vecpoints(f,2),real(values(f));opts...)
-plot(f::MultivariateFun,obj,window;opts...)=glsurfupdate(real(values(f)),obj,window;opts...)
-plot{TS<:TensorSpace,T<:Real}(f::Fun{TS,T};opts...)=plot(ProductFun(f);ops...)
-
-
-# plot{S<:IntervalSpace,V<:PeriodicSpace,SS<:TensorSpace}(f::ProductFun{S,V,SS};opts...)=surf(vecpoints(f,1),vecpoints(f,2),real(values(f));opts...)
-# function plot{S<:IntervalSpace,V<:PeriodicSpace}(f::ProductFun{S,V};opts...)
-#     Px,Py=points(f)
-#     vals=real(values(f))
-#     surf([Px Px[:,1]], [Py Py[:,1]], [vals vals[:,1]];opts...)
-# end
-# function plot{S<:IntervalSpace,V<:PeriodicSpace}(f::ProductFun{S,V},obj,window)
-#     vals=real(values(f))
-#     glsurfupdate([vals vals[:,1]],obj,window)
-# end
-
-
-function plot{DS<:DiracSpace,T<:Real}(f::Fun{DS,T},v...)
-    n=length(space(f).points)
-    plot(layer(Fun(f.coefficients[n+1:end],space(f).space)),
-               map(gadflydeltalayer,space(f).points,f.coefficients[1:n])...,v...)
+@recipe function f(x::AbstractVector,y::AbstractVector,g::MultivariateFun)
+    seriestype --> :surface
+    x,y,real(g(x,y)).'
 end
 
-## domainplot
 
-
-for (plt,cplt) in ((:plot,:complexplot),(:layer,:complexlayer))
-    @eval $plt(d::Domain,v...;kwds...)=$cplt(Fun(identity,d),v...;kwds...)  # default is to call complexplot
+@recipe function f{TS<:AbstractProductSpace,T<:Real}(g::Fun{TS,T})
+    ProductFun(g)
 end
-plot{D<:Domain}(ds::Vector{D},v...;kwds...)=complexplot(map(d->Fun(identity,d),ds),v...;kwds...)
-layer{D<:Domain}(d::Vector{D})=map(layer,d)
 
-domainplot(f::Union(Fun,FunctionSpace),v...;kwds...)=plot(domain(f),v...;kwds...)
-domainlayer(f::Union(Fun,FunctionSpace))=layer(domain(f))
+@recipe function f{TS<:AbstractProductSpace,T<:Complex}(g::Fun{TS,T})
+    ProductFun(g)
+end
 
+@recipe function f{TS<:AbstractProductSpace,T<:Real}(x::AbstractVector,y::AbstractVector,g::Fun{TS,T})
+    x,y,ProductFun(g)
+end
 
-
-
+@recipe function f{TS<:AbstractProductSpace,T<:Complex}(x::AbstractVector,y::AbstractVector,g::Fun{TS,T})
+    x,y,ProductFun(g)
+end

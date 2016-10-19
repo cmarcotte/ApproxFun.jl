@@ -1,23 +1,43 @@
-export Jacobi,Legendre
+export Jacobi, Legendre, WeightedJacobi
 
-immutable Jacobi <: PolynomialSpace
-    a::Float64
-    b::Float64
-    domain::Interval
+
+immutable Jacobi{T,D<:Domain} <: PolynomialSpace{D}
+    a::T
+    b::T
+    domain::D
 end
 Legendre(domain)=Jacobi(0.,0.,domain)
 Legendre()=Legendre(Interval())
+Jacobi(a,b,d::Domain)=Jacobi(promote(a,b)...,d)
+Jacobi(a,b,d)=Jacobi(a,b,Domain(d))
 Jacobi(a,b)=Jacobi(a,b,Interval())
+Jacobi(A::Ultraspherical) = Jacobi(order(A)-0.5,order(A)-0.5,domain(A))
+Jacobi(A::Chebyshev)=Jacobi(-0.5,-0.5,domain(A))
 
-spacescompatible(a::Jacobi,b::Jacobi)=a.a==b.a && a.b==b.b
+function Ultraspherical(J::Jacobi)
+    if J.a == J.b
+        Ultraspherical(J.a+0.5,domain(J))
+    else
+        error("Cannot construct Ultraspherical with a=$(J.a) and b=$(J.b)")
+    end
+end
+
+Base.promote_rule{T,V,D}(::Type{Jacobi{T,D}},::Type{Jacobi{V,D}})=Jacobi{promote_type(T,V),D}
+Base.convert{T,V,D}(::Type{Jacobi{T,D}},J::Jacobi{V,D})=Jacobi{T,D}(J.a,J.b,J.domain)
+
+typealias WeightedJacobi{T,D} JacobiWeight{Jacobi{T,D},D}
+
+@compat (::Type{WeightedJacobi})(α,β,d::Domain) = JacobiWeight(α,β,Jacobi(β,α,d))
+@compat (::Type{WeightedJacobi})(α,β) = JacobiWeight(α,β,Jacobi(β,α))
+
+spacescompatible(a::Jacobi,b::Jacobi) = a.a==b.a && a.b==b.b
 
 function canonicalspace(S::Jacobi)
-    if isinteger(S.a) && isinteger(S.b)
-        Jacobi(0.,0.,domain(S))
-    elseif isinteger(S.a+0.5) && isinteger(S.b+0.5)
-        Chebyshev()
+    if isapproxinteger(S.a+0.5) && isapproxinteger(S.b+0.5)
+        Chebyshev(domain(S))
     else
-        S
+        # return space with parameters in (-1,0.]
+        Jacobi(mod(S.a,-1),mod(S.b,-1),domain(S))
     end
 end
 
@@ -25,21 +45,40 @@ end
 # jacobirecA/B/C is from dlmf:
 # p_{n+1} = (A_n x + B_n)p_n - C_n p_{n-1}
 #####
-jacobirecA(α,β,k)=k==0&&((α+β==0)||(α+β==-1))?.5*(α+β)+1:(2k+α+β+1)*(2k+α+β+2)/(2*(k+1)*(k+α+β+1))
-jacobirecB(α,β,k)=k==0&&((α+β==0)||(α+β==-1))?.5*(β-α):(α^2-β^2)*(2k+α+β+1)/(2*(k+1)*(k+α+β+1)*(2k+α+β))
-jacobirecC(α,β,k)=(k+α)*(k+β)*(2k+α+β+2)/((k+1)*(k+α+β+1)*(2k+α+β))
+jacobirecA{T}(::Type{T},α,β,k)=k==0&&((α+β==0)||(α+β==-1))?.5*(α+β)+one(T):(2k+α+β+one(T))*(2k+α+β+2one(T))/(2*(k+one(T))*(k+α+β+one(T)))
+jacobirecB{T}(::Type{T},α,β,k)=k==0&&((α+β==0)||(α+β==-1))?.5*(α-β)*one(T):(α-β)*(α+β)*(2k+α+β+one(T))/(2*(k+one(T))*(k+α+β+one(T))*(2one(T)*k+α+β))
+jacobirecC{T}(::Type{T},α,β,k)=(one(T)*k+α)*(one(T)*k+β)*(2k+α+β+2one(T))/((k+one(T))*(k+α+β+one(T))*(2one(T)*k+α+β))
 
 #####
 # jacobirecA/B/C is from dlmf:
 # x p_{n-1} =γ_n p_{n-2} + α_n p_{n-1} +  p_n β_n
 #####
 
-jacobirecγ(α,β,k)=jacobirecC(α,β,k-1)/jacobirecA(α,β,k-1)
-jacobirecα(α,β,k)=-jacobirecB(α,β,k-1)/jacobirecA(α,β,k-1)
-jacobirecβ(α,β,k)=1/jacobirecA(α,β,k-1)
+jacobirecγ{T}(::Type{T},α,β,k)=jacobirecC(T,α,β,k-1)/jacobirecA(T,α,β,k-1)
+jacobirecα{T}(::Type{T},α,β,k)=-jacobirecB(T,α,β,k-1)/jacobirecA(T,α,β,k-1)
+jacobirecβ{T}(::Type{T},α,β,k)=1/jacobirecA(T,α,β,k-1)
 
-for (REC,JREC) in ((:recα,:jacobirecα),(:recβ,:jacobirecβ),(:recγ,:jacobirecγ))
-    @eval $REC(::Type,sp::Jacobi,k)=$JREC(sp.a,sp.b,k)  #TODO: implement typing
+for (REC,JREC) in ((:recα,:jacobirecα),(:recβ,:jacobirecβ),(:recγ,:jacobirecγ),
+                   (:recA,:jacobirecA),(:recB,:jacobirecB),(:recC,:jacobirecC))
+    @eval $REC{T}(::Type{T},sp::Jacobi,k)=$JREC(T,sp.a,sp.b,k)
+end
+
+
+function jacobip(r::Range,α,β,x)
+    n=r[end]+1
+    if n<=2
+        v=[1.,.5*(α-β+(2+α+β)*x)]
+    else
+        T=promote_type(Float64,typeof(x))
+        v=Vector{T}(n)  # x may be complex
+        v[1]=1.
+        v[2]=.5*(α-β+(2+α+β)*x)
+
+        for k=2:n-1
+            v[k+1]=((x-jacobirecα(T,α,β,k))*v[k] - jacobirecγ(T,α,β,k)*v[k-1])/jacobirecβ(T,α,β,k)
+        end
+    end
+    v[r+1]
 end
 
 
@@ -53,18 +92,19 @@ function jacobip(r::Range,α,β,x::Number)
         if n<=2
             v=[1.,.5*(α-β+(2+α+β)*x)]
         else
-            v=Array(promote_type(Float64,typeof(x)),n)  # x may be complex
+            T=promote_type(Float64,typeof(x))
+            v=Vector{T}(n)  # x may be complex
             v[1]=1.
             v[2]=.5*(α-β+(2+α+β)*x)
 
             for k=2:n-1
-                v[k+1]=((x-jacobirecα(α,β,k))*v[k] - jacobirecγ(α,β,k)*v[k-1])/jacobirecβ(α,β,k)
+                v[k+1]=((x-jacobirecα(T,α,β,k))*v[k] - jacobirecγ(T,α,β,k)*v[k-1])/jacobirecβ(T,α,β,k)
             end
         end
         v[r+1]
     end
 end
-jacobip(n::Integer,α,β,v::Number)=jacobip(n:n,α,β,v)[1]
+jacobip(n::Integer,α,β,v)=jacobip(n:n,α,β,v)[1]
 jacobip(n::Range,α,β,v::Vector)=transpose(hcat(map(x->jacobip(n,α,β,x),v)...))
 jacobip(n::Integer,α,β,v::Vector)=map(x->jacobip(n,α,β,x),v)
 jacobip(n,S::Jacobi,v)=jacobip(n,S.a,S.b,v)
@@ -96,53 +136,95 @@ end
 setdomain(S::Jacobi,d::Domain)=Jacobi(S.a,S.b,d)
 
 
-# O(min(m,n)) Jacobi inner product
+# O(min(m,n)) Jacobi conjugated inner product
 
-function innerprod{S,V}(sp::Jacobi,u::Vector{S},v::Vector{V})
+function conjugatedinnerproduct{S,V}(sp::Jacobi,u::Vector{S},v::Vector{V})
     T,mn = promote_type(S,V),min(length(u),length(v))
     α,β = sp.a,sp.b
-    wi = 2^(α+β+1)*gamma(α+1)*gamma(β+1)/gamma(α+β+2)
-    ret = conj(u[1])*wi*v[1]
-    for i=2:mn
-      wi *= (α+i-1)*(β+i-1)/(i-1)/(i-1+α+β)*(2i+α+β-3)/(2i+α+β-1)
-      ret += conj(u[i])*wi*v[i]
+    if mn > 1
+        wi = 2^(α+β+1)*gamma(α+1)*gamma(β+1)/gamma(α+β+2)
+        ret = u[1]*wi*v[1]
+        for i=2:mn
+            wi *= (α+i-1)*(β+i-1)/(i-1)/(i-1+α+β)*(2i+α+β-3)/(2i+α+β-1)
+            ret += u[i]*wi*v[i]
+        end
+        return ret
+    elseif mn > 0
+        wi = 2^(α+β+1)*gamma(α+1)*gamma(β+1)/gamma(α+β+2)
+        return u[1]*wi*v[1]
+    else
+        return zero(promote_type(eltype(u),eltype(v)))
     end
-    ret
 end
 
-function Base.dot(f::Fun{Jacobi},g::Fun{Jacobi})
+function bilinearform{J<:Jacobi}(f::Fun{J},g::Fun{J})
     @assert domain(f) == domain(g)
     if f.space.a == g.space.a == 0. && f.space.b == g.space.b == 0.
-        return complexlength(domain(f))/2*innerprod(g.space,f.coefficients,g.coefficients)
+        return complexlength(domain(f))/2*conjugatedinnerproduct(g.space,f.coefficients,g.coefficients)
     else
-        return defaultdot(f,g)
+        return defaultbilinearform(f,g)
     end
 end
 
-function Base.dot(f::Fun{JacobiWeight{Jacobi}},g::Fun{Jacobi})
+function bilinearform{J<:Jacobi,DD<:Interval}(f::Fun{JacobiWeight{J,DD}},g::Fun{J})
     @assert domain(f) == domain(g)
     if f.space.β == f.space.space.a == g.space.a && f.space.α == f.space.space.b == g.space.b
-        return complexlength(domain(f))/2*innerprod(g.space,f.coefficients,g.coefficients)
+        return complexlength(domain(f))/2*conjugatedinnerproduct(g.space,f.coefficients,g.coefficients)
     else
-        return defaultdot(f,g)
+        return defaultbilinearform(f,g)
     end
 end
 
-function Base.dot(f::Fun{Jacobi},g::Fun{JacobiWeight{Jacobi}})
+function bilinearform{J<:Jacobi,DD<:Interval}(f::Fun{J},g::Fun{JacobiWeight{J,DD}})
     @assert domain(f) == domain(g)
     if g.space.β == g.space.space.a == f.space.a && g.space.α == g.space.space.b == f.space.b
-        return complexlength(domain(f))/2*innerprod(f.space,f.coefficients,g.coefficients)
+        return complexlength(domain(f))/2*conjugatedinnerproduct(f.space,f.coefficients,g.coefficients)
     else
-        return defaultdot(f,g)
+        return defaultbilinearform(f,g)
     end
 end
 
-function Base.dot(f::Fun{JacobiWeight{Jacobi}},g::Fun{JacobiWeight{Jacobi}})
+function bilinearform{J<:Jacobi,DD<:Interval}(f::Fun{JacobiWeight{J,DD}},g::Fun{JacobiWeight{J,DD}})
     @assert domain(f) == domain(g)
     if f.space.β + g.space.β == f.space.space.a == g.space.space.a && f.space.α + g.space.α == f.space.space.b == g.space.space.b
-        return complexlength(domain(f))/2*innerprod(f.space.space,f.coefficients,g.coefficients)
+        return complexlength(domain(f))/2*conjugatedinnerproduct(f.space.space,f.coefficients,g.coefficients)
     else
-        return defaultdot(f,g)
+        return defaultbilinearform(f,g)
     end
 end
 
+function linebilinearform{J<:Jacobi}(f::Fun{J},g::Fun{J})
+    @assert domain(f) == domain(g)
+    if f.space.a == g.space.a == 0. && f.space.b == g.space.b == 0.
+        return arclength(domain(f))/2*conjugatedinnerproduct(g.space,f.coefficients,g.coefficients)
+    else
+        return defaultlinebilinearform(f,g)
+    end
+end
+
+function linebilinearform{J<:Jacobi,DD<:Interval}(f::Fun{JacobiWeight{J,DD}},g::Fun{J})
+    @assert domain(f) == domain(g)
+    if f.space.β == f.space.space.a == g.space.a && f.space.α == f.space.space.b == g.space.b
+        return arclength(domain(f))/2*conjugatedinnerproduct(g.space,f.coefficients,g.coefficients)
+    else
+        return defaultlinebilinearform(f,g)
+    end
+end
+
+function linebilinearform{J<:Jacobi,DD<:Interval}(f::Fun{J},g::Fun{JacobiWeight{J,DD}})
+    @assert domain(f) == domain(g)
+    if g.space.β == g.space.space.a == f.space.a && g.space.α == g.space.space.b == f.space.b
+        return arclength(domain(f))/2*conjugatedinnerproduct(f.space,f.coefficients,g.coefficients)
+    else
+        return defaultlinebilinearform(f,g)
+    end
+end
+
+function linebilinearform{J<:Jacobi,DD<:Interval}(f::Fun{JacobiWeight{J,DD}},g::Fun{JacobiWeight{J,DD}})
+    @assert domain(f) == domain(g)
+    if f.space.β + g.space.β == f.space.space.a == g.space.space.a && f.space.α + g.space.α == f.space.space.b == g.space.space.b
+        return arclength(domain(f))/2*conjugatedinnerproduct(f.space.space,f.coefficients,g.coefficients)
+    else
+        return defaultlinebilinearform(f,g)
+    end
+end

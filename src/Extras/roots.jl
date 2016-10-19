@@ -1,7 +1,46 @@
-## Root finding
+## Root finding for Chebyshev expansions
+#
+#  Contains code that is based in part on Chebfun v5's chebfun/@chebteck/roots.m,
+# which is distributed with the following license:
+
+# Copyright (c) 2015, The Chancellor, Masters and Scholars of the University
+# of Oxford, and the Chebfun Developers. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#     * Neither the name of the University of Oxford nor the names of its
+#       contributors may be used to endorse or promote products derived from
+#       this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-complexroots{D<:IntervalSpace}(f::Fun{D})=fromcanonical(f,colleague_eigvals(f.coefficients))
+function complexroots{C<:Chebyshev}(f::Fun{C})
+    if ncoefficients(f)==0 || (ncoefficients(f)==1 && isapprox(f.coefficients[1],0))
+        warn("Tried to take roots of a zero function.  Returning [].")
+        Complex128[]
+    elseif ncoefficients(f)==1
+        Complex128[]
+    elseif ncoefficients(f)==2
+        Complex128[-f.coefficients[1]/f.coefficients[2]]
+    else
+        fromcanonical(f,colleague_eigvals(f.coefficients))
+    end
+end
 
 #function roots(f::Fun)
 #    irts=map(real,filter!(x->abs(x)<=1.+10eps(),filter!#(isreal,complexroots(f.coefficients))))
@@ -16,7 +55,7 @@ complexroots{D<:IntervalSpace}(f::Fun{D})=fromcanonical(f,colleague_eigvals(f.co
 #    end
 #end
 
-function roots{S,T}(f::Fun{S,T})
+function roots(f::Fun)
     f2=Fun(f,domain(f)) # default is to convert to Chebyshev/Fourier
     if space(f2)==space(f)
         error("roots not implemented for "*string(typeof(f)))
@@ -26,7 +65,7 @@ function roots{S,T}(f::Fun{S,T})
 end
 
 
-function roots( f::Fun{Chebyshev} )
+function roots{C<:Chebyshev}( f::Fun{C} )
 # FIND THE ROOTS OF AN IFUN.
 
     d = domain(f)
@@ -34,31 +73,42 @@ function roots( f::Fun{Chebyshev} )
     vscale = maxabs(values(f))
     if vscale == 0
         warn("Tried to take roots of a zero function.  Returning [].")
-        ##TODO: could be complex domain, in which case type should be Complex{Float64}
-        return Float64[]
+        return eltype(domain(f))[]
     end
 
     hscale = maximum( [abs(first(d)), abs(last(d))] )
     htol = eps(2000.)*max(hscale, 1)  # TODO: choose tolerance better
 
     if eltype(f) == BigFloat
-        r = rootsunit_coeffs(convert(Vector{Float64},c./vscale), @compat Float64(htol))
+        r = rootsunit_coeffs(convert(Vector{Float64},c./vscale), Float64(htol))
         # Map roots from [-1,1] to domain of f:
         rts = fromcanonical(d,r)
         fp = differentiate(f)
-        while norm(f[rts]) > 1000eps(eltype(f))
-            rts .-=f[rts]./fp[rts]
+        while norm(f(rts)) > 1000eps(eltype(f))
+            rts .-=f(rts)./fp(rts)
         end
     elseif eltype(f) == Complex{BigFloat}
-        r = rootsunit_coeffs(convert(Vector{Complex{Float64}},c./vscale), @compat Float64(htol))
+        r = rootsunit_coeffs(convert(Vector{Complex{Float64}},c./vscale), Float64(htol))
         # Map roots from [-1,1] to domain of f:
         rts = fromcanonical(d,r)
         fp = differentiate(f)
-        while norm(f[rts]) > 1000eps(eltype(f))
-            rts .-=f[rts]./fp[rts]
+        while norm(f(rts)) > 1000eps(eltype(f))
+            rts .-=f(rts)./fp(rts)
         end
     else
-        r = rootsunit_coeffs(c./vscale, @compat Float64(htol))
+        cvscale=c./vscale
+        r = rootsunit_coeffs(cvscale, Float64(htol))
+
+        # Check endpoints, as these are prone to inaccuracy
+        # which can be deadly.
+        if (isempty(r) || !isapprox(last(r),1.)) && abs(sum(cvscale)) < htol
+            push!(r,1.)
+        end
+        if (isempty(r) || !isapprox(first(r),-1.)) && abs(alternatingsum(cvscale)) < htol
+            insert!(r,1,-1.)
+        end
+
+
         # Map roots from [-1,1] to domain of f:
         rts = fromcanonical(d,r)
     end
@@ -106,7 +156,9 @@ function colleague_balance!(M)
 end
 
 
-colleague_eigvals( c::Vector )=hesseneigvals(colleague_balance!(colleague_matrix(c)))
+# colleague_eigvals( c::Vector )=hesseneigvals(colleague_balance!(colleague_matrix(c)))
+
+colleague_eigvals( c::Vector )=eigvals(colleague_matrix(c))
 
 function PruneOptions( r, htol::Float64 )
 # ONLY KEEP ROOTS IN THE INTERVAL
@@ -122,8 +174,8 @@ function PruneOptions( r, htol::Float64 )
     return r
 end
 
-rootsunit_coeffs{T<:Number}(c::Vector{T}, htol::Float64)=rootsunit_coeffs(c,htol,ClenshawPlan(T,length(c)))
-function rootsunit_coeffs{T<:Number}(c::Vector{T}, htol::Float64,clplan::ClenshawPlan{T})
+rootsunit_coeffs{T<:Number}(c::Vector{T}, htol::Float64)=rootsunit_coeffs(c,htol,ClenshawPlan(T,Chebyshev(),length(c),length(c)))
+function rootsunit_coeffs{S,T<:Number}(c::Vector{T}, htol::Float64,clplan::ClenshawPlan{S,T})
 # Computes the roots of the polynomial given by the coefficients c on the unit interval.
 
 
@@ -161,7 +213,6 @@ function rootsunit_coeffs{T<:Number}(c::Vector{T}, htol::Float64,clplan::Clensha
         # Adjust the coefficients for the colleague matrix
         # Prune roots depending on preferences:
         r = PruneOptions( colleague_eigvals(c), htol )::Vector{Float64}
-
     else
 
         #  RECURSIVE SUBDIVISION:
@@ -196,10 +247,10 @@ function extremal_args(f::Fun)
         roots(differentiate(f))
     elseif isa(d,PeriodicDomain)  # avoid complex domains
         S=typeof(space(f))
-        fromcanonical(f,extremal_args(Fun(f.coefficients,S(canonicaldomain(f)))))
+        fromcanonical(f,extremal_args(setcanonicaldomain(f)))
     else
         dab=∂(domain(f))
-        if length(f) <=2 #TODO this is only relevant for Polynomial bases
+        if ncoefficients(f) <=2 #TODO this is only relevant for Polynomial bases
             dab
         else
             [dab;roots(differentiate(f))]
@@ -208,25 +259,32 @@ function extremal_args(f::Fun)
 end
 
 for op in (:(Base.maximum),:(Base.minimum),:(Base.extrema),:(Base.maxabs),:(Base.minabs))
-    @eval begin
-        function $op{S<:RealSpace,T<:Real}(f::Fun{S,T})
-            pts = extremal_args(f)
+    @eval function $op{S<:RealSpace,T<:Real}(f::Fun{S,T})
+        pts = extremal_args(f)
 
-            $op(f[pts])
-        end
+        $op(f(pts))
     end
 end
 
 for op in (:(Base.maxabs),:(Base.minabs))
-    @eval begin
-        function $op{S,T}(f::Fun{S,T})
-            # complex spaces/types can have different extrema
-            pts = extremal_args(abs(f))
+    @eval function $op(f::Fun)
+        # complex spaces/types can have different extrema
+        pts = extremal_args(abs(f))
 
-            $op(f[pts])
-        end
+        $op(f(pts))
     end
 end
+
+for op in (:(Base.maximum),:(Base.minimum),:(Base.maxabs),:(Base.minabs))
+    @eval begin
+        $op{SV,DD<:UnionDomain,d,T<:Real}(f::Fun{PiecewiseSpace{SV,RealBasis,DD,d},T}) =
+            $op(map($op,vec(f)))
+    end
+end
+
+Base.extrema{SV,DD<:UnionDomain,d,T<:Real}(f::Fun{PiecewiseSpace{SV,RealBasis,DD,d},T}) =
+    mapreduce(extrema,(x,y)->extrema([x...;y...]),vec(f))
+
 
 
 
@@ -236,13 +294,13 @@ for op in (:(Base.indmax),:(Base.indmin))
             # the following avoids warning when differentiate(f)==0
             pts = extremal_args(f)
             # the extra real avoids issues with complex round-off
-            pts[$op(real(f[pts]))]
+            pts[$op(real(f(pts)))]
         end
 
         function $op{S,T}(f::Fun{S,T})
             # the following avoids warning when differentiate(f)==0
             pts = extremal_args(f)
-            fp=f[pts]
+            fp=f(pts)
             @assert norm(imag(fp))<100eps()
             pts[$op(real(fp))]
         end
@@ -254,20 +312,15 @@ for op in (:(Base.findmax),:(Base.findmin))
         function $op{S<:RealSpace,T<:Real}(f::Fun{S,T})
             # the following avoids warning when differentiate(f)==0
             pts = extremal_args(f)
-            ext,ind = $op(f[pts])
-	    ext,pts[ind]
+            ext,ind = $op(f(pts))
+	        ext,pts[ind]
         end
     end
 end
 
 
 
-
-## Fourier
-
-
-
-## Root finding
+## Root finding for Laurent expansion
 
 
 function companion_matrix{T}(c::Vector{T})
@@ -289,7 +342,7 @@ end
 
 
 if isdir(Pkg.dir("AMVW"))
-    require("AMVW")
+    using AMVW
     function complexroots(coefficients::Vector)
         c=chop(coefficients,10eps())
 
@@ -305,13 +358,12 @@ else
 end
 
 complexroots(neg::Vector,pos::Vector)=complexroots([flipdim(chop(neg,10eps()),1);pos])
-complexroots(f::Fun{Laurent})=mappoint(Circle(),domain(f),complexroots(f.coefficients[2:2:end],f.coefficients[1:2:end]))
-complexroots(f::Fun{Taylor})=mappoint(Circle(),domain(f),complexroots(f.coefficients))
+complexroots{DD}(f::Fun{Laurent{DD}})=mappoint(Circle(),domain(f),complexroots(f.coefficients[2:2:end],f.coefficients[1:2:end]))
+complexroots{DD}(f::Fun{Taylor{DD}})=mappoint(Circle(),domain(f),complexroots(f.coefficients))
 
 
-roots{S<:MappedSpace}(f::Fun{S})=fromcanonical(f,roots(Fun(coefficients(f),space(f).space)))
 
-function roots(f::Fun{Laurent})
+function roots{DD}(f::Fun{Laurent{DD}})
     irts=filter!(z->in(z,Circle()),complexroots(Fun(f.coefficients,Laurent(Circle()))))
     if length(irts)==0
         Complex{Float64}[]
@@ -326,14 +378,14 @@ function roots(f::Fun{Laurent})
 end
 
 
-roots(f::Fun{Fourier})=roots(Fun(f,Laurent))
+roots{D}(f::Fun{Fourier{D}})=roots(Fun(f,Laurent))
 
 function roots{P<:PiecewiseSpace}(f::Fun{P})
-    rts=[map(roots,vec(f))...]
+    rts=mapreduce(roots,vcat,vec(f))
     k=1
     while k < length(rts)
         if isapprox(rts[k],rts[k+1])
-            rts=rts[[1:k,k+2:end]]
+            rts=rts[[1:k;k+2:end]]
         else
             k+=1
         end
@@ -342,6 +394,8 @@ function roots{P<:PiecewiseSpace}(f::Fun{P})
     rts
 end
 
+
+## Root finding for JacobiWeight expansion
 
 # Add endpoints for JacobiWeight
 # TODO: what about cancellation?

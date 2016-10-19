@@ -1,10 +1,19 @@
 
 ## boundary
 
-∂{A<:Interval,B<:Interval}(d::ProductDomain{@compat(Tuple{A,B})})=PiecewiseInterval(d[1].a+im*d[2].a,d[1].b+im*d[2].a,d[1].b+im*d[2].b,d[1].a+im*d[2].b,d[1].a+im*d[2].a)
-∂{A<:Interval,B<:PeriodicInterval}(d::ProductDomain{@compat(Tuple{A,B})})=UnionDomain([d[1].b+im*d[2],d[1].a+im*reverse(d[2])])
-∂{A<:PeriodicInterval,B<:Interval}(d::ProductDomain{@compat(Tuple{A,B})})=UnionDomain([d[1]+im*d[2].a,reverse(d[1])+im*d[2].b])
-∂{A<:PeriodicInterval,B<:PeriodicInterval}(d::ProductDomain{@compat(Tuple{A,B})})=EmptyDomain()
+∂{A<:Interval,B<:Interval}(d::ProductDomain{Tuple{A,B}}) =
+    PiecewiseInterval([Vec(d[1].a,d[2].a),
+                      Vec(d[1].b,d[2].a),
+                      Vec(d[1].b,d[2].b),
+                      Vec(d[1].a,d[2].b),
+                      Vec(d[1].a,d[2].a)])
+∂{A<:Interval,B<:PeriodicInterval}(d::ProductDomain{Tuple{A,B}}) =
+    UnionDomain((PeriodicInterval(Vec(d[1].b,d[2].a),Vec(d[1].b,d[2].b)),
+        PeriodicInterval(Vec(d[1].a,d[2].b),Vec(d[1].a,d[2].a))))
+∂{A<:PeriodicInterval,B<:Interval}(d::ProductDomain{Tuple{A,B}}) =
+    UnionDomain((PeriodicInterval(Vec(d[1].a,d[2].a),Vec(d[1].b,d[2].a)),
+        PeriodicInterval(Vec(d[1].b,d[2].b),Vec(d[1].a,d[2].b))))
+∂{A<:PeriodicInterval,B<:PeriodicInterval}(d::ProductDomain{Tuple{A,B}}) = EmptyDomain()
 
 
 
@@ -12,7 +21,7 @@
 
 
 
-function Base.join{IT<:Interval}(p1::Vector{IT},p2::Vector{IT})
+function Base.join{IT<:Interval}(p1::AbstractVector{IT},p2::AbstractVector{IT})
     for k=length(p1):-1:1,j=length(p2):-1:1
         if p1[k]==reverse(p2[j])
             deleteat!(p1,k)
@@ -23,8 +32,7 @@ function Base.join{IT<:Interval}(p1::Vector{IT},p2::Vector{IT})
     [p1;p2]
 end
 
-function ∂{PD<:ProductDomain}(d::UnionDomain{PD})
+function ∂{PD1<:ProductDomain,PD2<:ProductDomain}(d::UnionDomain{Tuple{PD1,PD2}})
     bnd=map(d->pieces(∂(d)),d.domains)
     PiecewiseInterval(reduce(join,bnd))
 end
-

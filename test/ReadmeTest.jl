@@ -1,32 +1,35 @@
-
 ## Intro
 
-using ApproxFun,Base.Test
+
+using ApproxFun, Base.Test, Compat
+
+println("    Calculus and algebra tests")
+
+
 x = Fun(identity,[0.,10.])
 f = sin(x^2)
 g = cos(x)
 
 
-@test_approx_eq_eps f[.1] sin(.1^2) 1000eps()
+@test_approx_eq_eps f(.1) sin(.1^2) 1000eps()
 
 h = f + g^2
 r = roots(h)
 rp = roots(differentiate(h))
 
-@test norm(h[r])<1000eps()
+@test norm(h(r))<1000eps()
 
-@test norm(diff(h)[rp])<100000eps()
+@test norm(h'(rp))<100000eps()
 
 
 
 
 ## Differentiation and Integration
 f = Fun(x->exp(x),[-1.,1.])
-fp = differentiate(f)
-@test norm(f-fp)<1000eps()
+@test norm(f-f')<1000eps()
 
 g = cumsum(f)
-g = g + f[-1]
+g = g + f(-1)
 @test norm(f-g)<100eps()
 
 
@@ -45,6 +48,12 @@ g = abs(f)
 space(f)
 space(g)
 
+x = Fun()
+f = erf(x)
+g = besselj(3,exp(f))
+h = airyai(10asin(f)+2g)
+
+println("    ODE tests")
 
 ## Solving ODEs
 
@@ -55,9 +64,20 @@ B = dirichlet(d)
 L = D^2 - x
 u = [B;L] \ [airyai(d.a);airyai(d.b)]
 
-@test_approx_eq u[0.] airyai(0.)
+@test_approx_eq_eps u(0.) airyai(0.) 10000eps()
 
 
+## Nonlinear BVPs
+x=Fun()
+u0=0.0x
+
+N=u->[u(-1.)-1.,u(1.)+0.5,0.001u''+6*(1-x^2)*u'+u^2-1.]
+u=newton(N,u0)
+
+@test norm(N(u)[end]) ≤ 1000eps()
+
+
+println("    Periodic tests")
 ## Periodic Functions
 
 f = Fun(cos,Fourier([-π,π]))
@@ -80,48 +100,45 @@ f = Fun(t->exp(sin(10t)),s)
 uFourier = L\f
 
 
-@ test_approx_eq uChebyshev[0.] uFourier[0.]
+@test_approx_eq uChebyshev(0.) uFourier(0.)
 
 
+
+println("    Sampling tests")
 ## Sampling
 
 f = abs(Fun(sin,[-5,5]))
 x = ApproxFun.sample(f,10000)
 
 
-## PDEs
 
+println("    PDE tests")
+## PDEs
+using ApproxFun
 d = Interval()^2                            # Defines a rectangle
 
-u = [dirichlet(d);lap(d)+100I]\ones(4)      # First four entries of rhs are 
-
-d = Disk()
-f = Fun((x,y)->exp(-10(x+.2)^2-20(y-.1)^2),d) 
-u = [dirichlet(d);lap(d)]\Any[0.,f]
+# @time u = linsolve([Dirichlet(d);Laplacian(d)+100I],
+#                     [ones(∂(d));0.];tolerance=1E-10)      # First four entries of rhs are
+#
 
 
 
+QR = qrfact([Dirichlet(d);Laplacian()+100I])
+        @time ApproxFun.resizedata!(QR,:,4000)
+        @time u = linsolve(QR,
+                        [ones(∂(d));0.];tolerance=1E-7)
+
+
+@test_approx_eq u(0.1,1.) 1.0
+@test_approx_eq_eps u(0.1,0.2) -0.02768276827514463 1E-8
 
 
 
+println("    BigFloat tests")
 
-d = Interval()^2
-u0 = Fun((x,y)->exp(-40(x-.1)^2-40(y+.2)^2),d)
-B = dirichlet(d)
-D = Derivative(Interval())
-L = (0.01D^2-4D)⊗I + I⊗(0.01D^2-3D)
-h = 0.002
-
-
-d = Disk()
-u0 = Fun((x,y)->exp(-50x^2-40(y-.1)^2)+.5exp(-30(x+.5)^2-40(y+.2)^2),d)
-B= [dirichlet(d);neumann(d)]
-L = -lap(d)^2
-h = 0.001
-
-
-d = Disk()
-u0 = Fun((x,y)->exp(-50x^2-40(y-.1)^2)+.5exp(-30(x+.5)^2-40(y+.2)^2),d)
-B= [dirichlet(d);neumann(d)]
-L = -lap(d)^2
-h = 0.001
+setprecision(1000) do
+    d=Interval{BigFloat}(0,1)
+    D=Derivative(d)
+    u=[ldirichlet();D-I]\[1]
+    @test_approx_eq u(1) exp(BigFloat(1))
+end

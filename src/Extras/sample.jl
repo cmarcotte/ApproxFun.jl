@@ -15,7 +15,7 @@ function bisectioninv{S,T}(f::Fun{S,T},x::Float64;numits::Int=47)
 
     for k=1:numits  #TODO: decide 47
         m=.5*(a+b)
-        val = f[m]
+        val = f(m)
 
             (val<= x) ? (a = m) : (b = m)
     end
@@ -30,10 +30,10 @@ bisectioninv{S,T}(f::Fun{S,T},x::Vector;opts...)=Float64[bisectioninv(f,xx;opts.
 function chebbisectioninv(c::Vector{Float64},x::Float64;numits::Int=47)
     a = -1.;b = 1.
 
-
+    C=Chebyshev()
     for k=1:numits  #TODO: decide 47
         m=.5*(a+b)
-        val = clenshaw(c,m)
+        val = clenshaw(C,c,m)
 
             (val<= x) ? (a = m) : (b = m)
     end
@@ -41,8 +41,8 @@ function chebbisectioninv(c::Vector{Float64},x::Float64;numits::Int=47)
 end
 
 
-chebbisectioninv(c::Vector{Float64},xl::Vector{Float64})=(n=length(xl);chebbisectioninv(c,xl,ClenshawPlan(Float64,n)))
-function chebbisectioninv(c::Vector{Float64},xl::Vector{Float64},plan::ClenshawPlan{Float64})
+chebbisectioninv(c::Vector{Float64},xl::Vector{Float64})=(n=length(xl);chebbisectioninv(c,xl,ClenshawPlan(Float64,Chebyshev(),length(c),n)))
+function chebbisectioninv{D<:Domain}(c::Vector{Float64},xl::Vector{Float64},plan::ClenshawPlan{Chebyshev{D},Float64})
     n = length(xl)
     a = -ones(n)
     b = ones(n)
@@ -61,8 +61,8 @@ end
 
 
 #here, xl is vector w/ length == #cols of c
-chebbisectioninv(c::Array{Float64,2},xl::Vector{Float64})=(n=length(xl);chebbisectioninv(c,xl,ClenshawPlan(Float64,n)))
-function chebbisectioninv(c::Array{Float64,2},xl::Vector{Float64},plan::ClenshawPlan{Float64})
+chebbisectioninv(c::Array{Float64,2},xl::Vector{Float64})=(n=length(xl);chebbisectioninv(c,xl,ClenshawPlan(Float64,Chebyshev(),size(c,1),n)))
+function chebbisectioninv{D<:Domain}(c::Array{Float64,2},xl::Vector{Float64},plan::ClenshawPlan{Chebyshev{D},Float64})
     @assert size(c)[2] == length(xl)
 
     n = length(xl)
@@ -81,8 +81,11 @@ function chebbisectioninv(c::Array{Float64,2},xl::Vector{Float64},plan::Clenshaw
     m=.5*(a+b)
 end
 
-for TYP in (:Vector,:Float64), SP in (:Chebyshev,:LineSpace)
-    @eval bisectioninv(cf::Fun{$SP,Float64},x::$TYP;opts...)=fromcanonical(cf,chebbisectioninv(coefficients(cf),x;opts...))
+for TYP in (:Vector,:Float64)
+    @eval begin
+        bisectioninv{SP<:Chebyshev}(cf::Fun{SP,Float64},x::$TYP;opts...)=fromcanonical(cf,chebbisectioninv(coefficients(cf),x;opts...))
+#        bisectioninv{SP<:LineSpace}(cf::Fun{SP,Float64},x::$TYP;opts...)=fromcanonical(cf,chebbisectioninv(coefficients(cf),x;opts...))
+    end
 end
 
 
@@ -172,10 +175,17 @@ samplecdf(v::Vector)=chebbisectioninv(v,rand())
 
 sample{TS<:AbstractProductSpace}(f::Fun{TS},k::Integer)=sample(ProductFun(f),k)
 
-function sample(f::LowRankFun{Chebyshev,Chebyshev,TensorSpace{@compat(Tuple{Chebyshev,Chebyshev}),RealBasis,2},Float64,Float64},n::Integer)
+function sample(f::LowRankFun,n::Integer)
+    rx=sample(sum(f,2),n)
+    fA=evaluate(f,rx,:)
+    ry=map(sample,fA)
+    [rx ry]
+end
+
+function sample{C<:Chebyshev}(f::LowRankFun{C,C,TensorSpace{Tuple{C,C},RealBasis,2},Float64},n::Integer)
     ry=sample(sum(f,1),n)
     fA=evaluate(f.A,ry)
-    CB=coefficients(f.B)
+    CB=coefficientmatrix(f.B)
     AB=CB*fA
     chebnormalizedcumsum!(AB)
     rx=chebbisectioninv(AB,rand(n))
@@ -193,33 +203,32 @@ sample(f::MultivariateFun)=sample(f,1)[1,:]
 ## Special spaces
 
 # Rays may be schwartz at right endpoint so we project
-function sample{SS<:JacobiWeight,DD<:Ray,TT}(f::Fun{MappedSpace{SS,DD,TT},Float64},n::Integer)
-    if space(f).space.β == 0
+function sample{SS,DD<:Ray}(f::Fun{JacobiWeight{SS,DD},Float64},n::Integer)
+    if space(f).β == 0
         samplecdf(normalizedcumsum(f),n)
     else
-        sample(Fun(x->f[x],MappedSpace(domain(f),JacobiWeight(space(f).space.α,1))),n)
+        sample(Fun(x->f(x),JacobiWeight(space(f).α,1,domain(f))),n)
     end
 end
 
 # Line/Ray have unbounded endpoints so we map
-for TYP in (:Line,:Ray)
-    @eval bisectioninv{SS,DD<:$TYP,TT}(f::Fun{MappedSpace{SS,DD,TT},Float64},x::Vector)=fromcanonical(f,bisectioninv(Fun(f.coefficients,space(f).space),x))
-end
+# for TYP in (:Line,:Ray)
+#     @eval bisectioninv{SS,DD<:$TYP,TT}(f::Fun{MappedSpace{SS,DD,TT},Float64},x::Vector)=fromcanonical(f,
+#                                                                                 bisectioninv(Fun(f.coefficients,space(f).space),x))
+# end
 
 
 
-function sample{SS}(f::LowRankFun{LineSpace{SS},LineSpace{SS},TensorSpace{@compat(Tuple{LineSpace{SS},LineSpace{SS}}),RealBasis,2},Float64,Float64},n::Integer)
-    cf=normalizedcumsum(sum(f,1))
-    CB=coefficients(map(cumsum,f.B))
-
-    ry=samplecdf(cf,n)
-    fA=evaluate(f.A,ry)
-    CBfA=CB*fA  #cumsums at points
-    multiply_oneatright!(CBfA)
-
-    rx=fromcanonical(first(f.B),chebbisectioninv(CBfA,rand(n)))
-
-    [rx ry]
-end
-
-
+# function sample{SS}(f::LowRankFun{LineSpace{SS},LineSpace{SS},TensorSpace{Tuple{LineSpace{SS},LineSpace{SS}},RealBasis,2},Float64},n::Integer)
+#     cf=normalizedcumsum(sum(f,1))
+#     CB=coefficients(map(cumsum,f.B))
+#
+#     ry=samplecdf(cf,n)
+#     fA=evaluate(f.A,ry)
+#     CBfA=CB*fA  #cumsums at points
+#     multiply_oneatright!(CBfA)
+#
+#     rx=fromcanonical(first(f.B),chebbisectioninv(CBfA,rand(n)))
+#
+#     [rx ry]
+# end

@@ -1,99 +1,100 @@
 
 
 
-ToeplitzOperator(f::Fun{Laurent})=ToeplitzOperator(f.coefficients[2:2:end],
+ToeplitzOperator{DD}(f::Fun{Laurent{DD}})=ToeplitzOperator(f.coefficients[2:2:end],
                                                     f.coefficients[1:2:end])
-LaurentOperator(f::Fun{Laurent})=LaurentOperator(f.coefficients[3:2:end],
+LaurentOperator{DD}(f::Fun{Laurent{DD}})=LaurentOperator(f.coefficients[3:2:end],
                                                     f.coefficients[[1;2:2:end]])
 
 
 
 ##Taylor
 
-
-bandinds(M::Multiplication{Taylor,Taylor})=1-length(M.f),0
-rangespace(M::Multiplication{Taylor,Taylor})=domainspace(M)
-addentries!(M::Multiplication{Taylor,Taylor},A,k)=addentries!(ToeplitzOperator(M.f.coefficients[2:end],[M.f.coefficients[1]]),A,k)
+Multiplication{DD}(f::Fun{Taylor{DD}},sp::Taylor{DD}) =
+    MultiplicationWrapper(f,SpaceOperator(ToeplitzOperator(f.coefficients[2:end],
+                                                           [f.coefficients[1]]),
+                                          sp,sp))
 
 
 ## Evaluation
 
-getindex(T::Evaluation{Taylor,Complex{Float64},Complex{Float64}},cols::Range)=mappoint(domain(T),Circle(),T.x).^(cols-1)
+getindex{DD}(T::ConcreteEvaluation{Taylor{DD},Complex{Float64},Int,Complex{Float64}},cols::Range) =
+    mappoint(domain(T),Circle(),T.x).^(cols-1)
 
 
 ## Multiplication
 
-bandinds(M::Multiplication{Laurent,Laurent})=bandinds(LaurentOperator(M.f))
-rangespace(M::Multiplication{Laurent,Laurent})=domainspace(M)
-addentries!(M::Multiplication{Laurent,Laurent},A,k)=addentries!(LaurentOperator(M.f),A,k)
+Multiplication{DD}(f::Fun{Laurent{DD}},sp::Laurent{DD}) =
+    MultiplicationWrapper(f,SpaceOperator(LaurentOperator(f),sp,sp))
 
+
+Multiplication{DD}(f::Fun{Fourier{DD}},sp::Laurent{DD}) = Multiplication(Fun(f,sp),sp)
+Multiplication{DD}(f::Fun{Laurent{DD}},sp::Fourier{DD}) = Multiplication(Fun(f,sp),sp)
+
+# override SumSpace default
+coefficienttimes{DD}(f::Fun{Laurent{DD}},g::Fun{Laurent{DD}}) = Multiplication(f,space(g))*g
 
 
 
 
 ## Derivative
 
-function bandinds{s}(D::Derivative{Hardy{s}})
-    d=domain(D)
-    if isa(d,PeriodicInterval)
-        (0,0)
-    elseif isa(d,Circle)
-        s?(0,D.order):(-D.order,0)
-    else
-        error("Derivative not defined for "*string(typeof(d)))
-    end
-end
-rangespace{S<:Hardy}(D::Derivative{S})=D.space
+# override map definition
+Derivative{s,DD<:Circle}(S::Hardy{s,DD},k::Integer) = ConcreteDerivative(S,k)
+Derivative{s,DD<:PeriodicInterval}(S::Hardy{s,DD},k::Integer) = ConcreteDerivative(S,k)
+Derivative{DD<:Circle}(S::Laurent{DD},k::Integer) =
+    DerivativeWrapper(InterlaceOperator(Diagonal([map(s->Derivative(s,k),S.spaces)...]),SumSpace),k)
 
-function taylor_derivative_addentries!(d::PeriodicInterval,m::Integer,A,kr::Range)
+bandinds{s,DD<:PeriodicInterval}(D::ConcreteDerivative{Hardy{s,DD}})=(0,0)
+bandinds{s,DD<:Circle}(D::ConcreteDerivative{Hardy{s,DD}})=s?(0,D.order):(-D.order,0)
+
+rangespace{S<:Hardy}(D::ConcreteDerivative{S})=D.space
+
+function taylor_derivative_getindex(d::PeriodicInterval,m,k::Integer,j::Integer)
     C=2/(d.b-d.a)*π*im
-    for k=kr
-        A[k,k] += (C*(k-1))^m
-    end
-    A
+    k==j?(C*(k-1))^m:zero(C)
 end
 
-function hardyfalse_derivative_addentries!(d::PeriodicInterval,m::Integer,A,kr::Range)
+function hardyfalse_derivative_getindex(d::PeriodicInterval,m,k::Integer,j::Integer)
     C=2/(d.b-d.a)*π*im
-    for k=kr
-        A[k,k] += (-C*k)^m
-    end
-    A
+    k==j?(-C*k)^m:zero(C)
 end
 
 
 
-function taylor_derivative_addentries!(d::Circle,m::Integer,A,kr::Range)
+function taylor_derivative_getindex(d::Circle,m,k::Integer,j::Integer)
     C=d.radius^(-m)
 
-    for k=kr
+    if j==k+m
         D=k
         for j=k+1:k+m-1
           D*=j
         end
-        A[k,k+m] += C*D
+        C*D
+    else
+        zero(C)
     end
-
-    A
 end
 
-function hardyfalse_derivative_addentries!(d::Circle,m::Integer,A,kr::Range)
+function hardyfalse_derivative_getindex(d::Circle,m,k::Integer,j::Integer)
     C=(-d.radius)^(-m)
 
-    for k=max(m+1,kr[1]):kr[end]
+    if j == k-m
         D=k-m
         for j=k-m+1:k-1
           D*=j
         end
-        A[k,k-m] += C*D
+        C*D
+    else
+        zero(C)
     end
-
-    A
 end
 
 
-addentries!(D::Derivative{Taylor},A,kr::Range)=taylor_derivative_addentries!(domain(D),D.order,A,kr)
-addentries!(D::Derivative{Hardy{false}},A,kr::Range)=hardyfalse_derivative_addentries!(domain(D),D.order,A,kr)
+getindex{DD,OT,T}(D::ConcreteDerivative{Taylor{DD},OT,T},k::Integer,j::Integer)  =
+    T(taylor_derivative_getindex(domain(D),D.order,k,j))
+getindex{DD,OT,T}(D::ConcreteDerivative{Hardy{false,DD},OT,T},k::Integer,j::Integer) =
+    T(hardyfalse_derivative_getindex(domain(D),D.order,k,j))
 
 
 
@@ -102,137 +103,165 @@ addentries!(D::Derivative{Hardy{false}},A,kr::Range)=hardyfalse_derivative_adden
 
 
 
-function Integral(S::Taylor,m)
-    @assert isa(domain(S),Circle)
-    Integral{Taylor,typeof(m),Complex{Float64}}(S,m)
-end
+# Integral{D<:Circle}(S::Taylor{D},m)=Integral{Taylor,typeof(m),Complex{Float64}}(S,m)
+#
+# function Integral{D<:PeriodicInterval}(S::Hardy{false,D},m)
+#     Integral{Hardy{false,D},typeof(m),Complex{Float64}}(S,m)
+# end
 
-function Integral(S::Hardy{false},m)
-    @assert isa(domain(S),PeriodicInterval)
-    Integral{Hardy{false},typeof(m),Complex{Float64}}(S,m)
-end
 
-function bandinds(D::Integral{Taylor})
-    d=domain(D)
-    @assert isa(d,Circle)
-    (-D.order,0)
-end
-rangespace(D::Integral{Taylor})=D.space
-rangespace(Q::Integral{Hardy{false}})=Q.space
+Integral{s,DD<:Circle}(S::Hardy{s,DD},k::Integer)=ConcreteIntegral(S,k)
 
-function addentries!(D::Integral{Taylor},A,kr::Range)
+bandinds{DD<:Circle}(D::ConcreteIntegral{Taylor{DD}})=(-D.order,0)
+rangespace{s,DD<:Circle}(Q::ConcreteIntegral{Hardy{s,DD}})=Q.space
+
+function getindex{DD<:Circle}(D::ConcreteIntegral{Taylor{DD}},k::Integer,j::Integer)
     d=domain(D)
     m=D.order
-    @assert isa(d,Circle)
+    T=eltype(D)
+    C=T(d.radius^m)
 
-    C=d.radius^m
-
-    for k=max(m+1,kr[1]):kr[end]
+    if j==k-m
         D=k-m
         for j=k-m+1:k-1
           D*=j
         end
-        A[k,k-m] += C/D
+        C/D
+    else
+        zero(T)
     end
-
-    A
 end
 
 
-function bandinds{n,T}(D::Integral{SliceSpace{n,1,Hardy{false},T,1}})
-    d=domain(D)
-    @assert isa(d,Circle)
-    @assert D.order==n
+function Integral{T,DD<:Circle}(S::SubSpace{Hardy{false,DD},UnitCount{Int64},T,DD,1},k::Integer)
+    if first(S.indexes) == k+1
+        ConcreteIntegral(S,k)
+    else
+        @assert first(S.index) > k+1
+        S2=S.space|(k+1:∞)
+        IntegralWrapper(ConcreteIntegral(S2,k)*Converion(S,S2),k)
+    end
+end
+
+bandinds{T,DD<:Circle}(D::ConcreteIntegral{SubSpace{Hardy{false,DD},UnitCount{Int64},T,DD,1}}) =
     (0,0)
-end
-rangespace{n,T}(D::Integral{SliceSpace{n,1,Hardy{false},T,1}})=D.space.space
 
-function addentries!{n,T}(D::Integral{SliceSpace{n,1,Hardy{false},T,1}},A,kr::Range)
+rangespace{T,DD<:Circle}(D::ConcreteIntegral{SubSpace{Hardy{false,DD},UnitCount{Int64},T,DD,1}}) =
+    D.space.space
+
+function getindex{T,OT,TT,DD<:Circle}(D::ConcreteIntegral{SubSpace{Hardy{false,DD},UnitCount{Int64},T,DD,1},OT,TT},
+                                      k::Integer,j::Integer)
     d=domain(D)
     m=D.order
-    @assert isa(d,Circle)
 
-    C=(-d.radius)^m
+    C=TT((-d.radius)^m)
 
-    for k=kr
+    if k==j
         D=k
         for j=k+1:k+m-1
           D*=j
         end
-        A[k,k] += C/D
+        C/D
+    else
+        zero(TT)
     end
-
-    A
 end
 
 
 
-function bandinds(D::Integral{Hardy{false}})
-    d=domain(D)
-    @assert isa(d,PeriodicInterval)
-    (0,0)
-end
-rangespace(D::Integral{Taylor})=D.space
+bandinds{DD<:PeriodicInterval}(D::ConcreteIntegral{Hardy{false,DD}}) = (0,0)
+rangespace{DD<:PeriodicInterval}(D::ConcreteIntegral{Taylor{DD}}) = D.space
 
 
-function addentries!(D::Integral{Hardy{false}},A,kr::Range)
+function getindex{DD<:PeriodicInterval}(D::ConcreteIntegral{Hardy{false,DD}},k::Integer,j::Integer)
     d=domain(D)
     m=D.order
-    @assert isa(d,PeriodicInterval)
-
+    T=eltype(D)
     C=2/(d.b-d.a)*π*im
-    for k=kr
-        A[k,k] += (-C*k)^(-m)
+    if k==j
+        T((-C*k)^(-m))
+    else
+        zero(T)
     end
-    A
 end
 
 
 
-function bandinds{n,T}(D::Integral{SliceSpace{n,1,Taylor,T,1}})
-    d=domain(D)
-    @assert isa(d,PeriodicInterval)
+bandinds{T,DD<:PeriodicInterval}(D::ConcreteIntegral{SubSpace{Taylor{DD},UnitCount{Int64},T,DD,1}}) =
     (0,0)
-end
-rangespace{n,T}(D::Integral{SliceSpace{n,1,Taylor,T,1}})=D.space
+rangespace{T,DD<:PeriodicInterval}(D::ConcreteIntegral{SubSpace{Taylor{DD},UnitCount{Int64},T,DD,1}}) =
+    D.space
 
-function addentries!{n,T}(D::Integral{SliceSpace{n,1,Taylor,T,1}},A,kr::Range)
+function getindex{T,DD<:PeriodicInterval}(D::ConcreteIntegral{SubSpace{Taylor{DD},UnitCount{Int64},T,DD,1}},
+                                          k::Integer,j::Integer)
     d=domain(D)
     m=D.order
-    @assert isa(d,PeriodicInterval)
-
+    TT=eltype(D)
     C=2/(d.b-d.a)*π*im
-    for k=kr
-        A[k,k] += (C*(k+n-1))^(-m)
+    if k==j
+        TT((C*(k+n-1))^(-m))
+    else
+        zero(TT)
     end
-    A
 end
 
 
 
 ## Definite integral
 
-function getindex{T}(Σ::DefiniteIntegral{Laurent,T},kr::Range)
-    d = domain(Σ)
-    if isa(d,PeriodicInterval)
-        T[k == 1?  d.b-d.a : zero(T) for k=kr]
-    else
-        @assert isa(d,Circle)
-        T[k == 2?  2d.radius*π*im :zero(T) for k=kr]
+for SP in (:Taylor,:(Hardy{false}),:Laurent)
+    @eval begin
+        DefiniteIntegral{D}(S::$SP{D}) =
+            ConcreteDefiniteIntegral{typeof(S),promote_type(eltype(S),eltype(D))}(S)
+        DefiniteLineIntegral{D}(S::$SP{D}) =
+            ConcreteDefiniteLineIntegral{typeof(S),real(promote_type(eltype(S),eltype(D)))}(S)
     end
 end
 
-datalength(Σ::DefiniteIntegral{Laurent})=isa(domain(Σ),PeriodicInterval)?1:2
+getindex{T,D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Taylor{D},T},k::Integer) =
+    k == 1? complexlength(domain(Σ)) : zero(T)
 
-function getindex{T}(Σ::DefiniteLineIntegral{Laurent,T},kr::Range)
-    d = domain(Σ)
-    if isa(d,PeriodicInterval)
-        T[k == 1?  d.b-d.a : zero(T) for k=kr]
-    else
-        @assert isa(d,Circle)
-        T[k == 1?  2d.radius*π : zero(T) for k=kr]
-    end
+getindex{T,D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Hardy{false,D},T},k::Integer) =
+    zero(T)
+
+getindex{T,D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Laurent{D},T},k::Integer) =
+    k == 1? complexlength(domain(Σ)) : zero(T)
+
+getindex{T,D<:Circle}(Σ::ConcreteDefiniteIntegral{Taylor{D},T},k::Integer) =
+    zero(T)
+
+getindex{T,D<:Circle}(Σ::ConcreteDefiniteIntegral{Hardy{false,D},T},k::Integer) =
+    k == 1? complexlength(domain(Σ)) :zero(T)
+
+getindex{T,D<:Circle}(Σ::ConcreteDefiniteIntegral{Laurent{D},T},k::Integer) =
+    k == 2? complexlength(domain(Σ)) :zero(T)
+
+getindex{T,D}(Σ::ConcreteDefiniteLineIntegral{Taylor{D},T},k::Integer) =
+    k == 1? arclength(domain(Σ)) : zero(T)
+
+getindex{T,D}(Σ::ConcreteDefiniteLineIntegral{Hardy{false,D},T},k::Integer) =
+    zero(T)
+
+getindex{T,D}(Σ::ConcreteDefiniteLineIntegral{Laurent{D},T},k::Integer) =
+    k == 1? arclength(domain(Σ)) : zero(T)
+
+bandinds{D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Taylor{D}}) = 0,0
+bandinds{D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Hardy{false,D}}) = 0,0
+bandinds{D<:PeriodicInterval}(Σ::ConcreteDefiniteIntegral{Laurent{D}}) = 0,0
+bandinds{D<:Circle}(Σ::ConcreteDefiniteIntegral{Taylor{D}}) = 0,0
+bandinds{D<:Circle}(Σ::ConcreteDefiniteIntegral{Hardy{false,D}}) = 0,0
+bandinds{D<:Circle}(Σ::ConcreteDefiniteIntegral{Laurent{D}}) = 0,1
+bandinds{D}(Σ::ConcreteDefiniteLineIntegral{Taylor{D}}) = 0,0
+bandinds{D}(Σ::ConcreteDefiniteLineIntegral{Hardy{false,D}}) = 0,0
+bandinds{D}(Σ::ConcreteDefiniteLineIntegral{Laurent{D}}) = 0,0
+
+
+## reverse orientation
+
+conversion_type{DD<:Circle}(A::Laurent{DD},B::Laurent{DD})=domain(A).orientation?A:B
+function Conversion{DD}(A::Laurent{DD},B::Laurent{DD})
+    @assert domain(A) == reverse(domain(B))
+    ConversionWrapper(SpaceOperator(
+        BlockOperator(eye(1),PermutationOperator([2,1]))
+    ,A,B))
 end
-
-datalength(Σ::DefiniteLineIntegral{Laurent})=1
-
